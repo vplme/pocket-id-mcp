@@ -1,0 +1,53 @@
+# Swagger operations intentionally NOT exposed as MCP tools.
+# Every entry needs a reason; the coverage test (tests/coverage.rs) fails on
+# any operation that is neither mapped in the tool catalog nor listed here.
+
+[[exclusion]]
+method = "GET"
+path = "/.well-known/jwks.json"
+reason = "OIDC protocol endpoint consumed by relying parties, not an admin operation"
+
+[[exclusion]]
+method = "GET"
+path = "/.well-known/openid-configuration"
+reason = "OIDC protocol endpoint consumed by relying parties, not an admin operation"
+
+[[exclusion]]
+method = "GET"
+path = "/api/oidc/userinfo"
+reason = "OIDC protocol endpoint requiring an end-user access token, not usable with the admin API key"
+
+[[exclusion]]
+method = "POST"
+path = "/api/signup"
+reason = "browser signup flow for end users; account creation is covered by create_user and signup tokens"
+
+[[exclusion]]
+method = "POST"
+path = "/api/signup/setup"
+reason = "first-run instance setup wizard, a one-time browser flow"
+
+[[exclusion]]
+method = "POST"
+path = "/api/one-time-access-token/{token}"
+reason = "token redemption half of the login flow: exchanges a one-time token for a browser session; an assistant should mint (gated) but never consume login tokens"
+
+[[exclusion]]
+method = "POST"
+path = "/api/device-login/requests"
+reason = "device-login flow exists for interactive CLI login journeys an assistant should not drive"
+
+[[exclusion]]
+method = "POST"
+path = "/api/device-login/requests/{id}/exchange"
+reason = "device-login flow exists for interactive CLI login journeys an assistant should not drive"
+
+[[exclusion]]
+method = "POST"
+path = "/api/device-login/verification"
+reason = "device-login flow exists for interactive CLI login journeys an assistant should not drive"
+
+[[exclusion]]
+method = "POST"
+path = "/api/device-login/verification/decision"
+reason = "approving/denying device logins is a human security decision made in the browser UI"

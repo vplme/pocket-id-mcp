@@ -1,0 +1,62 @@
+[package]
+name = "pocket-id-mcp"
+version = "0.1.0"
+edition = "2024"
+description = "MCP server exposing the Pocket ID REST API as tools, with safety tiers and OAuth-secured HTTP mode"
+license = "MIT"
+repository = "https://github.com/vplme/pocket-id-mcp"
+keywords = ["mcp", "pocket-id", "oidc", "identity"]
+categories = ["command-line-utilities", "authentication"]
+rust-version = "1.85"
+
+[dependencies]
+rmcp = { version = "3.1.2", features = [
+    "server",
+    "macros",
+    "transport-io",
+    "transport-streamable-http-server",
+] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs"] }
+tokio-util = "0.7"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+    "multipart",
+    "stream",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+axum = "0.8"
+jsonwebtoken = "9"
+base64 = "0.22"
+percent-encoding = "2"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+mime_guess = "2"
+tempfile = "3"
+
+[dev-dependencies]
+wiremock = "0.6"
+serde_yaml = "0.9"
+toml = "0.8"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+rsa = "0.9"
+rand = "0.8"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+opt-level = "z"
+panic = "abort"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

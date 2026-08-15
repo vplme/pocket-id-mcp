@@ -1,0 +1,50 @@
+name: Spec drift
+
+on:
+  schedule:
+    # Mondays 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  diff:
+    name: Diff upstream swagger against vendored copy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download upstream spec
+        run: curl -fsSL --retry 3 -o /tmp/upstream-swagger.yaml https://pocket-id.org/swagger.yaml
+
+      - name: Compare operation sets
+        id: compare
+        run: |
+          pip install --quiet pyyaml
+          python3 .github/scripts/spec_drift.py spec/swagger.yaml /tmp/upstream-swagger.yaml > /tmp/drift-report.md
+          if [ -s /tmp/drift-report.md ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            cat /tmp/drift-report.md
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            echo "No drift detected."
+          fi
+
+      - name: Open or update tracking issue
+        if: steps.compare.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Upstream Pocket ID API drift detected"
+          BODY_FILE=/tmp/drift-report.md
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --body-file "$BODY_FILE"
+            gh issue comment "$EXISTING" --body "Drift check re-ran on $(date -u +%F) — issue body updated."
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE" --label upstream-drift || \
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE"
+          fi
