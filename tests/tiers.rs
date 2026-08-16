@@ -128,6 +128,46 @@ fn tools_with_structured_responses_declare_output_schema() {
 }
 
 #[test]
+fn input_schemas_use_plain_types_for_optional_params() {
+    // schemars maps `Option<T>` to `"type": ["T", "null"]`; MCP Inspector and
+    // other form-rendering clients only produce typed inputs (boolean toggle,
+    // number field) for a plain `"type"` string. The server collapses the
+    // arrays at registration, so no advertised input schema may contain one.
+    fn assert_no_type_arrays(name: &str, value: &serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                if let Some(t) = map.get("type") {
+                    assert!(!t.is_array(), "tool {name:?} advertises a type array: {t}");
+                }
+                map.values().for_each(|v| assert_no_type_arrays(name, v));
+            }
+            serde_json::Value::Array(items) => {
+                items.iter().for_each(|v| assert_no_type_arrays(name, v));
+            }
+            _ => {}
+        }
+    }
+    let server = server_with(false, true);
+    for tool in server.registered_tools() {
+        let schema = serde_json::Value::Object((*tool.input_schema).clone());
+        assert_no_type_arrays(&tool.name, &schema);
+    }
+    // Spot-check the shape Inspector needs: an optional bool is a plain boolean.
+    let tools = server.registered_tools();
+    let logo = tools
+        .iter()
+        .find(|t| t.name == "get_oidc_client_logo")
+        .expect("get_oidc_client_logo missing");
+    let light_type = logo
+        .input_schema
+        .get("properties")
+        .and_then(|p| p.get("light"))
+        .and_then(|l| l.get("type"))
+        .and_then(|t| t.as_str());
+    assert_eq!(light_type, Some("boolean"));
+}
+
+#[test]
 fn all_output_schemas_are_object_rooted() {
     // The MCP Tool type requires outputSchema to be `{"type": "object",
     // properties?: {[key]: object}}`; strict clients (Claude Code) reject the
