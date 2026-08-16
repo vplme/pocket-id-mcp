@@ -234,11 +234,11 @@ impl PocketIdServer {
     pub async fn introspect_token(
         &self,
         Parameters(p): Parameters<IntrospectParams>,
-    ) -> Result<Json<Enveloped<serde_json::Value>>, String> {
+    ) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .form("/api/oidc/introspect", &[("token", p.token.as_str())])
             .await
-            .map(enveloped)
+            .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
     }
 

@@ -252,9 +252,7 @@ impl PocketIdServer {
     }
 
     #[tool(description = "List client names present in the audit log (for building filters).")]
-    pub async fn list_audit_log_client_names(
-        &self,
-    ) -> Result<Json<Enveloped<serde_json::Value>>, String> {
+    pub async fn list_audit_log_client_names(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .json(
                 Method::GET,
@@ -263,16 +261,16 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(enveloped)
+            .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
     }
 
     #[tool(description = "List users present in the audit log (for building filters).")]
-    pub async fn list_audit_log_users(&self) -> Result<Json<Enveloped<serde_json::Value>>, String> {
+    pub async fn list_audit_log_users(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .json(Method::GET, "/api/audit-logs/filters/users", &[], NO_BODY)
             .await
-            .map(enveloped)
+            .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
     }
 
@@ -311,20 +309,20 @@ impl PocketIdServer {
     }
 
     #[tool(description = "Get the Pocket ID version this instance is running.")]
-    pub async fn get_current_version(&self) -> Result<Json<Enveloped<serde_json::Value>>, String> {
+    pub async fn get_current_version(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .json(Method::GET, "/api/version/current", &[], NO_BODY)
             .await
-            .map(enveloped)
+            .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
     }
 
     #[tool(description = "Get the latest released Pocket ID version (for update checks).")]
-    pub async fn get_latest_version(&self) -> Result<Json<Enveloped<serde_json::Value>>, String> {
+    pub async fn get_latest_version(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .json(Method::GET, "/api/version/latest", &[], NO_BODY)
             .await
-            .map(enveloped)
+            .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
     }
 

@@ -129,9 +129,11 @@ fn tools_with_structured_responses_declare_output_schema() {
 
 #[test]
 fn all_output_schemas_are_object_rooted() {
-    // The MCP Tool type requires outputSchema to be `{"type": "object", ...}`;
-    // strict clients (Claude Code) reject the entire tool list otherwise.
-    // Array/freeform results must use the {"result": ...} envelope.
+    // The MCP Tool type requires outputSchema to be `{"type": "object",
+    // properties?: {[key]: object}}`; strict clients (Claude Code) reject the
+    // entire tool list otherwise. Array/freeform results must use the
+    // {"result": ...} envelope, and freeform values must use AnyJson so their
+    // property schema is `{}` rather than schemars' boolean `true`.
     let server = server_with(false, true);
     for tool in server.registered_tools() {
         if let Some(schema) = &tool.output_schema {
@@ -142,6 +144,15 @@ fn all_output_schemas_are_object_rooted() {
                 tool.name,
                 serde_json::to_string(schema).unwrap_or_default(),
             );
+            if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
+                for (key, value) in props {
+                    assert!(
+                        value.is_object(),
+                        "tool {:?} property {key:?} has a non-object schema: {value}",
+                        tool.name,
+                    );
+                }
+            }
         }
     }
 }
