@@ -10,9 +10,9 @@ use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use pocket_id_mcp::client::PocketIdClient;
-use pocket_id_mcp::config::Config;
+use pocket_id_mcp::config::{Config, HttpAuthMode};
 use pocket_id_mcp::http::auth::{AuthError, Authenticator};
-use pocket_id_mcp::http::{HttpState, build_router, metadata_url_for};
+use pocket_id_mcp::http::{HttpState, OAuthState, build_router, metadata_url_for};
 use serde_json::json;
 use tower::ServiceExt;
 use wiremock::matchers::{method, path};
@@ -123,16 +123,25 @@ fn make_config(pocket_id_url: &str, issuer: &str, allowed_groups: Option<&str>) 
 
 fn make_state(config: &Arc<Config>, client: &Arc<PocketIdClient>) -> Arc<HttpState> {
     let http_config = config.http.clone().unwrap();
-    Arc::new(HttpState {
+    let HttpAuthMode::OAuth(oauth) = http_config.auth else {
+        panic!("test config must be in oauth mode");
+    };
+    Arc::new(HttpState::OAuth(Box::new(OAuthState {
         metadata_url: metadata_url_for(&http_config.public_url),
         resource: http_config.public_url.clone(),
-        issuer: http_config.oauth_issuer.clone(),
+        issuer: oauth.issuer.clone(),
         authenticator: Authenticator::new(
-            http_config,
+            oauth,
+            http_config.public_url,
             config.pocket_id_url.clone(),
             client.clone(),
         ),
-    })
+    })))
+}
+
+/// The OAuth-mode authenticator inside a test state.
+fn authenticator(state: &HttpState) -> &Authenticator {
+    &state.oauth().expect("oauth state").authenticator
 }
 
 fn make_router(config: Arc<Config>, client: Arc<PocketIdClient>) -> (axum::Router, Arc<HttpState>) {
@@ -286,7 +295,7 @@ async fn group_admission_enforced() {
 
     // Token with the group passes validation.
     let admin = mint_token(&issuer.uri(), RESOURCE, Some(vec!["admins", "users"]), 3600);
-    let claims = state.authenticator.validate(&admin).await.unwrap();
+    let claims = authenticator(&state).validate(&admin).await.unwrap();
     assert_eq!(claims["sub"], "user-1");
 }
 
@@ -312,8 +321,7 @@ async fn opaque_token_falls_back_to_pocket_id_introspection() {
     let client = Arc::new(PocketIdClient::new(&pocket.uri(), "upstream-key".into()));
     let state = make_state(&config, &client);
 
-    let claims = state
-        .authenticator
+    let claims = authenticator(&state)
         .validate("opaque-token-value")
         .await
         .unwrap();
@@ -329,8 +337,7 @@ async fn opaque_token_rejected_for_external_issuer() {
     let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
     let state = make_state(&config, &client);
 
-    let err = state
-        .authenticator
+    let err = authenticator(&state)
         .validate("opaque-token")
         .await
         .unwrap_err();
