@@ -48,7 +48,7 @@ pub struct PreviewParams {
 pub struct ClientLogoParams {
     /// OIDC client ID.
     pub client_id: String,
-    /// Dark-mode logo variant when true; light/default when false or omitted.
+    /// Light-mode logo variant when true (the API default when omitted); dark-mode when false.
     pub light: Option<bool>,
 }
 
@@ -56,7 +56,7 @@ pub struct ClientLogoParams {
 pub struct UpdateClientLogoParams {
     /// OIDC client ID.
     pub client_id: String,
-    /// Upload as the light-variant logo when true.
+    /// Upload as the light-mode logo variant when true (the API default when omitted); dark-mode when false.
     pub light: Option<bool>,
     #[serde(flatten)]
     pub source: FileSource,
