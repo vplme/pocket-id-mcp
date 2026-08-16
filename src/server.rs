@@ -37,6 +37,14 @@ impl PocketIdServer {
             }
         }
 
+        for route in tool_router.map.values_mut() {
+            let mut schema = serde_json::Value::Object((*route.attr.input_schema).clone());
+            collapse_nullable_types(&mut schema);
+            if let serde_json::Value::Object(map) = schema {
+                route.attr.input_schema = Arc::new(map);
+            }
+        }
+
         let mut prompt_router = Self::read_prompts();
         if !config.read_only {
             prompt_router += Self::write_prompts();
@@ -118,6 +126,37 @@ impl PocketIdServer {
 /// Uniform error mapping for tools returning `Result<_, String>`.
 pub(crate) fn err_str(e: ApiError) -> String {
     e.to_string()
+}
+
+/// Collapse schemars' nullable type arrays (`"type": ["boolean", "null"]`,
+/// produced for `Option<T>` params) to the plain type. Optionality is already
+/// expressed by absence from `required`, and clients like MCP Inspector only
+/// render typed inputs (e.g. a boolean toggle) for plain `"type"` strings —
+/// a type array falls back to a raw JSON text field. Applied to input schemas
+/// only: MCP callers omit optional params rather than sending null, while
+/// responses may legitimately contain nulls that clients validate against the
+/// output schema.
+fn collapse_nullable_types(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::Array(types)) = map.get_mut("type") {
+                types.retain(|t| t != "null");
+                if types.len() == 1 {
+                    let only = types.remove(0);
+                    map.insert("type".to_string(), only);
+                }
+            }
+            for v in map.values_mut() {
+                collapse_nullable_types(v);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for v in items {
+                collapse_nullable_types(v);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
