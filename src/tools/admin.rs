@@ -65,7 +65,7 @@ fn image_query(
 pub struct GetImageParams {
     /// Which application image to fetch.
     pub image_type: ImageType,
-    /// Light-mode logo variant (only valid for image_type=logo).
+    /// Light-mode logo variant when true (the API default when omitted); dark-mode when false. Only valid for image_type=logo.
     pub light: Option<bool>,
 }
 
@@ -73,7 +73,7 @@ pub struct GetImageParams {
 pub struct UpdateImageParams {
     /// Which application image to replace.
     pub image_type: ImageType,
-    /// Upload as the light-mode logo variant (only valid for image_type=logo).
+    /// Upload as the light-mode logo variant when true (the API default when omitted); dark-mode when false. Only valid for image_type=logo.
     pub light: Option<bool>,
     #[serde(flatten)]
     pub source: FileSource,
