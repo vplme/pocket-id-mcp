@@ -60,10 +60,15 @@ On startup the server validates connectivity and the API key against `GET /api/v
 | `POCKET_ID_MCP_ALLOW_DANGEROUS` | no | `false` | `true`/`1`/`yes`: also register dangerous tools |
 | `POCKET_ID_MCP_TRANSPORT` | no | `stdio` | `stdio` or `http` |
 | `POCKET_ID_MCP_HTTP_BIND` | no | `127.0.0.1:8756` | HTTP mode: bind address |
-| `POCKET_ID_MCP_PUBLIC_URL` | HTTP mode | — | HTTP mode: external URL of the MCP endpoint — the OAuth resource identifier (e.g. `https://mcp.example.com/mcp`) |
-| `POCKET_ID_MCP_OAUTH_ISSUER` | no | `POCKET_ID_URL` | HTTP mode: OAuth authorization server (any OIDC-compliant issuer) |
-| `POCKET_ID_MCP_ALLOWED_GROUPS` | no | — | HTTP mode: comma-separated groups; tokens must carry at least one |
-| `POCKET_ID_MCP_GROUPS_CLAIM` | no | `groups` | HTTP mode: claim name holding the group list |
+| `POCKET_ID_MCP_HTTP_AUTH` | no | `oauth` | HTTP mode: `oauth`, `token` (static bearer secret), or `none` (loopback only) |
+| `POCKET_ID_MCP_PUBLIC_URL` | `oauth` mode | `http://localhost:<port>` in other modes | HTTP mode: external URL of the MCP endpoint — the OAuth resource identifier (e.g. `https://mcp.example.com/mcp`) |
+| `POCKET_ID_MCP_OAUTH_ISSUER` | no | `POCKET_ID_URL` | `oauth` mode only: OAuth authorization server (any OIDC-compliant issuer) |
+| `POCKET_ID_MCP_ALLOWED_GROUPS` | no | — | `oauth` mode only: comma-separated groups; tokens must carry at least one |
+| `POCKET_ID_MCP_GROUPS_CLAIM` | no | `groups` | `oauth` mode only: claim name holding the group list |
+| `POCKET_ID_MCP_HTTP_TOKEN` | `token` mode | — | `token` mode only: the shared bearer secret clients must present |
+| `POCKET_ID_MCP_HTTP_ALLOW_UNAUTHENTICATED_NON_LOOPBACK` | no | `false` | `none` mode: allow a non-loopback bind (dangerous — see below) |
+
+OAuth-only variables are **rejected at startup** in `token`/`none` modes (and `POCKET_ID_MCP_HTTP_TOKEN` outside `token` mode), so a misconfigured setup fails loudly instead of silently skipping enforcement you thought you had.
 
 ## Safety tiers
 
@@ -79,7 +84,28 @@ Every tool is classified into exactly one tier. Gated tools are **not registered
 
 ## HTTP mode (remote / shared use)
 
-In HTTP mode the server speaks Streamable HTTP at `/mcp` and acts as an **OAuth 2.1 protected resource**: it publishes RFC 9728 metadata at `/.well-known/oauth-protected-resource`, challenges unauthenticated requests with `WWW-Authenticate`, and validates every request's bearer token (signature via the issuer's JWKS, issuer, expiry, and audience = `POCKET_ID_MCP_PUBLIC_URL`). Client bearer tokens are **never** forwarded to Pocket ID — upstream calls use only the API key.
+In HTTP mode the server speaks Streamable HTTP at `/mcp`. Authentication is selected with `POCKET_ID_MCP_HTTP_AUTH`:
+
+- **`oauth`** (default) — OAuth 2.1 protected resource; the right choice for anything reachable beyond your machine. Detailed below.
+- **`token`** — a static shared bearer secret; good default for local HTTP (one long-running server shared by local MCP clients) and shared machines.
+- **`none`** — no authentication; only accepted on a loopback bind. For quick local testing.
+
+### Local HTTP quick start
+
+```sh
+export POCKET_ID_MCP_TRANSPORT=http
+export POCKET_ID_MCP_HTTP_AUTH=token
+export POCKET_ID_MCP_HTTP_TOKEN=$(openssl rand -hex 32)
+pocket-id-mcp   # serves http://127.0.0.1:8756/mcp
+```
+
+Point clients at `http://localhost:8756/mcp` with header `Authorization: Bearer <token>`. Or, for throwaway testing with e.g. MCP Inspector, `POCKET_ID_MCP_HTTP_AUTH=none` drops the header requirement entirely.
+
+> **⚠️ `none` mode**: whoever can reach the port wields your admin API key — the server therefore refuses to start unauthenticated on a non-loopback bind unless you set `POCKET_ID_MCP_HTTP_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=true`. Don't, outside of an isolated network you fully trust. Note that loopback is not a full boundary either: any local process/user can call the server, and only Host-header validation (always active) stands between a malicious webpage and DNS-rebinding its way in. Prefer `token` mode.
+
+### OAuth mode
+
+The server acts as an **OAuth 2.1 protected resource**: it publishes RFC 9728 metadata at `/.well-known/oauth-protected-resource`, challenges unauthenticated requests with `WWW-Authenticate`, and validates every request's bearer token (signature via the issuer's JWKS, issuer, expiry, and audience = `POCKET_ID_MCP_PUBLIC_URL`). Client bearer tokens are **never** forwarded to Pocket ID — upstream calls use only the API key.
 
 ```sh
 export POCKET_ID_MCP_TRANSPORT=http

@@ -1,5 +1,6 @@
-//! Streamable HTTP transport secured as an OAuth 2.1 protected resource
-//! (RFC 9728 metadata, bearer validation, group admission).
+//! Streamable HTTP transport with selectable authentication: OAuth 2.1
+//! protected resource (RFC 9728 metadata, bearer validation, group admission),
+//! static shared bearer token, or unauthenticated (loopback-guarded).
 
 pub mod auth;
 
@@ -14,18 +15,36 @@ use axum::{Json, Router};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
+use subtle::ConstantTimeEq;
 
 use crate::client::PocketIdClient;
-use crate::config::Config;
+use crate::config::{Config, HttpAuthMode};
 use crate::server::PocketIdServer;
 use auth::{AuthError, Authenticator};
 
-pub struct HttpState {
+pub struct OAuthState {
     pub authenticator: Authenticator,
     /// Absolute URL of the protected resource metadata document.
     pub metadata_url: String,
     pub resource: String,
     pub issuer: String,
+}
+
+/// Per-mode router state; OAuth-only machinery exists only in the OAuth arm.
+pub enum HttpState {
+    OAuth(Box<OAuthState>),
+    StaticToken { token: String },
+    None,
+}
+
+impl HttpState {
+    /// OAuth-mode state, when that is the active mode.
+    pub fn oauth(&self) -> Option<&OAuthState> {
+        match self {
+            HttpState::OAuth(o) => Some(o.as_ref()),
+            _ => None,
+        }
+    }
 }
 
 /// RFC 9728: insert the well-known segment between origin and path.
@@ -45,38 +64,22 @@ pub fn metadata_url_for(public_url: &str) -> String {
     }
 }
 
-async fn protected_resource_metadata(State(state): State<Arc<HttpState>>) -> impl IntoResponse {
+async fn protected_resource_metadata(State(state): State<Arc<HttpState>>) -> Response {
+    let Some(oauth) = state.oauth() else {
+        // Route is only mounted in OAuth mode.
+        return StatusCode::NOT_FOUND.into_response();
+    };
     Json(serde_json::json!({
-        "resource": state.resource,
-        "authorization_servers": [state.issuer],
+        "resource": oauth.resource,
+        "authorization_servers": [oauth.issuer],
         "bearer_methods_supported": ["header"],
         "resource_name": "pocket-id-mcp",
     }))
+    .into_response()
 }
 
-fn unauthorized(state: &HttpState, reason: &str) -> Response {
-    let challenge = format!(
-        "Bearer resource_metadata=\"{}\", error=\"invalid_token\", error_description=\"{}\"",
-        state.metadata_url,
-        reason.replace('"', "'")
-    );
-    let mut resp = (
-        StatusCode::UNAUTHORIZED,
-        Json(serde_json::json!({ "error": "invalid_token", "error_description": reason })),
-    )
-        .into_response();
-    if let Ok(value) = HeaderValue::from_str(&challenge) {
-        resp.headers_mut().insert(header::WWW_AUTHENTICATE, value);
-    }
-    resp
-}
-
-async fn auth_middleware(
-    State(state): State<Arc<HttpState>>,
-    request: Request,
-    next: Next,
-) -> Response {
-    let token = request
+fn bearer_token(request: &Request) -> Option<&str> {
+    request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -85,15 +88,47 @@ async fn auth_middleware(
                 .or_else(|| v.strip_prefix("bearer "))
         })
         .map(str::trim)
-        .filter(|t| !t.is_empty());
+        .filter(|t| !t.is_empty())
+}
 
-    let Some(token) = token else {
-        return unauthorized(&state, "missing bearer token");
+fn unauthorized(challenge: &str, reason: &str) -> Response {
+    let mut resp = (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "error": "invalid_token", "error_description": reason })),
+    )
+        .into_response();
+    if let Ok(value) = HeaderValue::from_str(challenge) {
+        resp.headers_mut().insert(header::WWW_AUTHENTICATE, value);
+    }
+    resp
+}
+
+fn oauth_unauthorized(oauth: &OAuthState, reason: &str) -> Response {
+    let challenge = format!(
+        "Bearer resource_metadata=\"{}\", error=\"invalid_token\", error_description=\"{}\"",
+        oauth.metadata_url,
+        reason.replace('"', "'")
+    );
+    unauthorized(&challenge, reason)
+}
+
+async fn oauth_middleware(
+    State(state): State<Arc<HttpState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(oauth) = state.oauth() else {
+        // Only wired in OAuth mode; never reached otherwise.
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
 
-    match state.authenticator.validate(token).await {
+    let Some(token) = bearer_token(&request) else {
+        return oauth_unauthorized(oauth, "missing bearer token");
+    };
+
+    match oauth.authenticator.validate(token).await {
         Ok(_claims) => next.run(request).await,
-        Err(AuthError::Unauthorized(reason)) => unauthorized(&state, &reason),
+        Err(AuthError::Unauthorized(reason)) => oauth_unauthorized(oauth, &reason),
         Err(AuthError::Forbidden(reason)) => (
             StatusCode::FORBIDDEN,
             Json(serde_json::json!({
@@ -104,8 +139,36 @@ async fn auth_middleware(
             .into_response(),
         Err(AuthError::Internal(reason)) => {
             tracing::error!(%reason, "token validation infrastructure failure");
-            unauthorized(&state, "token validation unavailable")
+            oauth_unauthorized(oauth, "token validation unavailable")
         }
+    }
+}
+
+/// Static shared-secret admission: no issuer, no metadata, no OAuth challenge
+/// (a `resource_metadata` pointer would send clients on a dead-end OAuth dance).
+async fn static_token_middleware(
+    State(state): State<Arc<HttpState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let HttpState::StaticToken { token: expected } = state.as_ref() else {
+        // Only wired in static-token mode; never reached otherwise.
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+
+    let presented = bearer_token(&request).unwrap_or_default();
+    if presented.as_bytes().ct_eq(expected.as_bytes()).into() {
+        next.run(request).await
+    } else {
+        let reason = if presented.is_empty() {
+            "missing bearer token"
+        } else {
+            "invalid bearer token"
+        };
+        unauthorized(
+            &format!("Bearer error=\"invalid_token\", error_description=\"{reason}\""),
+            reason,
+        )
     }
 }
 
@@ -137,6 +200,8 @@ fn allowed_hosts(config: &Config) -> Vec<String> {
 }
 
 /// Build the complete HTTP router (exposed separately for integration tests).
+/// Host-header validation stays active in every mode — in `none` mode it is
+/// the only remaining request-level defense against DNS rebinding.
 pub fn build_router(
     config: Arc<Config>,
     client: Arc<PocketIdClient>,
@@ -152,22 +217,31 @@ pub fn build_router(
             // SSE streams: simpler for clients and proxies alike.
             .with_json_response(true),
     );
+    let mcp = Router::new().nest_service("/mcp", mcp_service);
 
-    let protected = Router::new().nest_service("/mcp", mcp_service).layer(
-        axum::middleware::from_fn_with_state(state.clone(), auth_middleware),
-    );
-
-    Router::new()
-        .route(
-            "/.well-known/oauth-protected-resource",
-            get(protected_resource_metadata),
-        )
-        .route(
-            "/.well-known/oauth-protected-resource/{*path}",
-            get(protected_resource_metadata),
-        )
-        .merge(protected)
-        .with_state(state)
+    match state.as_ref() {
+        HttpState::OAuth(_) => Router::new()
+            .route(
+                "/.well-known/oauth-protected-resource",
+                get(protected_resource_metadata),
+            )
+            .route(
+                "/.well-known/oauth-protected-resource/{*path}",
+                get(protected_resource_metadata),
+            )
+            .with_state(state.clone())
+            .merge(mcp.layer(axum::middleware::from_fn_with_state(
+                state,
+                oauth_middleware,
+            ))),
+        // route_layer, not layer: unknown paths must fall through to a plain
+        // 404 rather than an auth challenge for a route that doesn't exist.
+        HttpState::StaticToken { .. } => mcp.route_layer(axum::middleware::from_fn_with_state(
+            state,
+            static_token_middleware,
+        )),
+        HttpState::None => mcp,
+    }
 }
 
 /// Construct state, run startup validation, and serve until ctrl-c.
@@ -177,35 +251,58 @@ pub async fn serve(config: Arc<Config>, client: Arc<PocketIdClient>) -> anyhow::
         .clone()
         .ok_or_else(|| anyhow::anyhow!("HTTP transport selected without HTTP configuration"))?;
 
-    let authenticator = Authenticator::new(
-        http_config.clone(),
-        config.pocket_id_url.clone(),
-        client.clone(),
-    );
+    let state = match &http_config.auth {
+        HttpAuthMode::OAuth(oauth_config) => {
+            let authenticator = Authenticator::new(
+                oauth_config.clone(),
+                http_config.public_url.clone(),
+                config.pocket_id_url.clone(),
+                client.clone(),
+            );
+            let discovery = authenticator.init().await.map_err(|e| {
+                anyhow::anyhow!(
+                    "OAuth issuer validation failed for {}: {e}",
+                    oauth_config.issuer
+                )
+            })?;
+            tracing::info!(
+                auth_mode = "oauth",
+                issuer = %discovery.issuer,
+                jwks = %discovery.jwks_uri,
+                resource = %http_config.public_url,
+                "OAuth resource server initialized"
+            );
+            HttpState::OAuth(Box::new(OAuthState {
+                metadata_url: metadata_url_for(&http_config.public_url),
+                resource: http_config.public_url.clone(),
+                issuer: oauth_config.issuer.clone(),
+                authenticator,
+            }))
+        }
+        HttpAuthMode::StaticToken { token } => {
+            tracing::info!(auth_mode = "token", "static bearer token authentication");
+            HttpState::StaticToken {
+                token: token.clone(),
+            }
+        }
+        HttpAuthMode::None => {
+            tracing::warn!(
+                auth_mode = "none",
+                bind = %http_config.bind,
+                "serving WITHOUT authentication — anyone who can reach this port \
+                 has full access to the configured Pocket ID API key's privileges"
+            );
+            HttpState::None
+        }
+    };
 
-    let discovery = authenticator.init().await.map_err(|e| {
-        anyhow::anyhow!(
-            "OAuth issuer validation failed for {}: {e}",
-            http_config.oauth_issuer
-        )
-    })?;
-    tracing::info!(
-        issuer = %discovery.issuer,
-        jwks = %discovery.jwks_uri,
-        resource = %http_config.public_url,
-        "OAuth resource server initialized"
-    );
-
-    let state = Arc::new(HttpState {
-        metadata_url: metadata_url_for(&http_config.public_url),
-        resource: http_config.public_url.clone(),
-        issuer: http_config.oauth_issuer.clone(),
-        authenticator,
-    });
-
-    let router = build_router(config.clone(), client, state);
+    let router = build_router(config.clone(), client, Arc::new(state));
     let listener = tokio::net::TcpListener::bind(&http_config.bind).await?;
-    tracing::info!(bind = %http_config.bind, "serving MCP over streamable HTTP at /mcp");
+    tracing::info!(
+        bind = %http_config.bind,
+        auth_mode = http_config.auth.name(),
+        "serving MCP over streamable HTTP at /mcp"
+    );
     axum::serve(listener, router)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

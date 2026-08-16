@@ -10,7 +10,7 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::client::PocketIdClient;
-use crate::config::HttpConfig;
+use crate::config::OAuthConfig;
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -34,7 +34,9 @@ pub struct DiscoveryDocument {
 }
 
 pub struct Authenticator {
-    http_config: HttpConfig,
+    oauth: OAuthConfig,
+    /// OAuth resource identifier (the public URL) tokens must be bound to.
+    resource: String,
     pocket_id_url: String,
     pocket_client: Arc<PocketIdClient>,
     http: reqwest::Client,
@@ -44,12 +46,14 @@ pub struct Authenticator {
 
 impl Authenticator {
     pub fn new(
-        http_config: HttpConfig,
+        oauth: OAuthConfig,
+        resource: String,
         pocket_id_url: String,
         pocket_client: Arc<PocketIdClient>,
     ) -> Self {
         Self {
-            http_config,
+            oauth,
+            resource,
             pocket_id_url,
             pocket_client,
             http: reqwest::Client::builder()
@@ -62,11 +66,11 @@ impl Authenticator {
     }
 
     pub fn resource(&self) -> &str {
-        &self.http_config.public_url
+        &self.resource
     }
 
     pub fn issuer(&self) -> &str {
-        &self.http_config.oauth_issuer
+        &self.oauth.issuer
     }
 
     /// Fetch (or return cached) issuer discovery metadata. Tries OIDC
@@ -75,7 +79,7 @@ impl Authenticator {
         if let Some(doc) = self.discovery.read().await.clone() {
             return Ok(doc);
         }
-        let issuer = self.http_config.oauth_issuer.trim_end_matches('/');
+        let issuer = self.oauth.issuer.trim_end_matches('/');
         let candidates = [
             format!("{issuer}/.well-known/openid-configuration"),
             format!("{issuer}/.well-known/oauth-authorization-server"),
@@ -229,10 +233,10 @@ impl Authenticator {
     }
 
     fn check_groups(&self, claims: &serde_json::Value) -> Result<(), AuthError> {
-        let Some(allowed) = &self.http_config.allowed_groups else {
+        let Some(allowed) = &self.oauth.allowed_groups else {
             return Ok(());
         };
-        let claim_name = &self.http_config.groups_claim;
+        let claim_name = &self.oauth.groups_claim;
         let groups: Vec<String> = match claims.get(claim_name) {
             Some(serde_json::Value::Array(arr)) => arr
                 .iter()
