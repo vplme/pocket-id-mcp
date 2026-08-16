@@ -34,3 +34,24 @@ jobs:
 
       - name: Test (includes spec coverage accounting)
         run: cargo test
+
+      # The Rust tests validate tool definitions in-process. This step drives a
+      # running server with the official MCP Inspector, so a regression that
+      # only a real client over a real transport would see — a handshake that
+      # yields no usable session, a mishandled protocol era — fails the build.
+      - name: Verify tools/list with the MCP Inspector
+        run: |
+          set -euo pipefail
+          python3 scripts/stub-pocket-id.py --port 8899 &
+          POCKET_ID_URL=http://127.0.0.1:8899 \
+          POCKET_ID_API_KEY=ci-stub-key \
+          POCKET_ID_MCP_ALLOW_DANGEROUS=true \
+          POCKET_ID_MCP_TRANSPORT=http \
+          POCKET_ID_MCP_HTTP_AUTH=none \
+          POCKET_ID_MCP_HTTP_BIND=127.0.0.1:8757 \
+            ./target/debug/pocket-id-mcp &
+          for _ in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:8899/api/version/current; then break; fi
+            sleep 1
+          done
+          scripts/inspector-verify.sh http://127.0.0.1:8757/mcp

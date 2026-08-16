@@ -165,6 +165,38 @@ fn input_schemas_use_plain_types_for_optional_params() {
         .and_then(|l| l.get("type"))
         .and_then(|t| t.as_str());
     assert_eq!(light_type, Some("boolean"));
+
+    // The collapse is deliberately asymmetric: output schemas keep their
+    // nullable unions, because API responses really do return nulls and a
+    // client validating a response against a collapsed schema would reject a
+    // legitimate payload. Assert the asymmetry so a future "fix" that applies
+    // the collapse to output schemas too fails loudly here.
+    let listing = tools
+        .iter()
+        .find(|t| t.name == "list_users")
+        .expect("list_users missing");
+    let output = listing
+        .output_schema
+        .as_ref()
+        .expect("list_users declares an output schema");
+    let has_nullable_union = {
+        fn any_type_array(value: &serde_json::Value) -> bool {
+            match value {
+                serde_json::Value::Object(map) => {
+                    map.get("type").is_some_and(|t| t.is_array())
+                        || map.values().any(any_type_array)
+                }
+                serde_json::Value::Array(items) => items.iter().any(any_type_array),
+                _ => false,
+            }
+        }
+        any_type_array(&serde_json::Value::Object((**output).clone()))
+    };
+    assert!(
+        has_nullable_union,
+        "output schemas must retain nullable unions; collapsing them would \
+         reject legitimate null-bearing API responses"
+    );
 }
 
 #[test]
