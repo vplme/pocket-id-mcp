@@ -31,7 +31,9 @@ pub struct Enveloped<T> {
 }
 ```
 
-Affected handlers change `Ok(Json(value))` → `Ok(Json(Enveloped { result: value }))` and their signature to `Json<Enveloped<...>>`. The derived schema becomes `{"type":"object","properties":{"result":...},"required":["result"]}` — for `serde_json::Value` the `result` property schema is permissive (`true`), which is fine: the root is what the protocol constrains.
+Affected handlers change `Ok(Json(value))` → `Ok(Json(Enveloped { result: value }))` and their signature to `Json<Enveloped<...>>`. The derived schema becomes `{"type":"object","properties":{"result":...},"required":["result"]}`.
+
+**Property schemas must be objects too.** The MCP `Tool` type constrains not only the root (`type: "object"`) but each entry under `properties` to be an object (`properties?: {[key: string]: object}`). schemars emits the *boolean* schema `true` for `serde_json::Value`, which strict clients reject at `outputSchema.properties.<key>` (observed live from Claude Code). Freeform values therefore use an `AnyJson` newtype (`#[serde(transparent)]` over `serde_json::Value`) with a manual `JsonSchema` impl emitting the unconstrained *object* schema `{}` — semantically identical to `true`, structurally an object. This applies both to `Enveloped<AnyJson>` tool returns and to freeform fields inside response DTOs that form top-level schema properties (`OidcClientPreview.access_token`/`id_token`/`user_info`).
 
 Alternative considered: omit `outputSchema` on the 14 tools (spec-legal — it's optional) — rejected: loses validation and type information, and rmcp's `Json<T>` couples schema derivation to the return type anyway, so omission would mean switching those tools to unstructured text returns.
 
@@ -39,7 +41,7 @@ Alternative considered: FastMCP-style automatic wrapping inside a custom rmcp ad
 
 ### 2. Regression test at the definition level
 
-Extend the existing schema test in `tests/tiers.rs` (which already iterates registered tool definitions) with: for every tool, if `output_schema` is present, its root `"type"` must equal `"object"`. Runs with all tiers enabled so dangerous-tier tools are covered too.
+Extend the existing schema test in `tests/tiers.rs` (which already iterates registered tool definitions) with: for every tool, if `output_schema` is present, its root `"type"` must equal `"object"` **and** every value under its `properties` must be a JSON object (not a boolean schema). Runs with all tiers enabled so dangerous-tier tools are covered too. This mirrors exactly the shape the MCP `Tool` type (and Claude Code's validation) enforces.
 
 ### 3. Text content follows the envelope
 

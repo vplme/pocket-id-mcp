@@ -24,6 +24,27 @@ pub fn enveloped<T>(result: T) -> rmcp::handler::server::wrapper::Json<Enveloped
     rmcp::handler::server::wrapper::Json(Enveloped { result })
 }
 
+/// Freeform JSON whose declared schema is the unconstrained object `{}`.
+/// schemars emits the boolean schema `true` for `serde_json::Value`, but the
+/// MCP `Tool` type requires every schema property value to be an object.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AnyJson(pub serde_json::Value);
+
+impl JsonSchema for AnyJson {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AnyJson".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({})
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Pagination
 // ---------------------------------------------------------------------------
@@ -284,9 +305,9 @@ pub struct OidcClientSecret {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcClientPreview {
-    pub access_token: Option<serde_json::Value>,
-    pub id_token: Option<serde_json::Value>,
-    pub user_info: Option<serde_json::Value>,
+    pub access_token: Option<AnyJson>,
+    pub id_token: Option<AnyJson>,
+    pub user_info: Option<AnyJson>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

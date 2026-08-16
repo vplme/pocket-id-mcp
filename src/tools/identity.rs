@@ -255,13 +255,11 @@ impl PocketIdServer {
     }
 
     #[tool(description = "Get suggested custom-claim keys already in use on this instance.")]
-    pub async fn get_custom_claim_suggestions(
-        &self,
-    ) -> Result<Json<Enveloped<serde_json::Value>>, String> {
+    pub async fn get_custom_claim_suggestions(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .json(Method::GET, "/api/custom-claims/suggestions", &[], NO_BODY)
             .await
-            .map(enveloped)
+            .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
     }
 
@@ -662,7 +660,7 @@ impl PocketIdServer {
     pub async fn create_one_time_access_token(
         &self,
         Parameters(p): Parameters<UserIdParam>,
-    ) -> Result<Json<Enveloped<serde_json::Value>>, String> {
+    ) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .json(
                 Method::POST,
@@ -671,7 +669,7 @@ impl PocketIdServer {
                 Some(&serde_json::json!({})),
             )
             .await
-            .map(enveloped)
+            .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
     }
 
