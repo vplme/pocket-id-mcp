@@ -8,6 +8,23 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
+// MCP envelope
+// ---------------------------------------------------------------------------
+
+/// MCP requires `outputSchema` and `structuredContent` to be object-rooted;
+/// tools whose natural result is an array or freeform value wrap it as
+/// `{"result": ...}` — the same convention the official Python SDK uses.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Enveloped<T> {
+    pub result: T,
+}
+
+/// Wrap a value for tool return: `.map(enveloped)` mirrors `.map(Json)`.
+pub fn enveloped<T>(result: T) -> rmcp::handler::server::wrapper::Json<Enveloped<T>> {
+    rmcp::handler::server::wrapper::Json(Enveloped { result })
+}
+
+// ---------------------------------------------------------------------------
 // Pagination
 // ---------------------------------------------------------------------------
 

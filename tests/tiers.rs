@@ -126,3 +126,22 @@ fn tools_with_structured_responses_declare_output_schema() {
         assert!(tool.output_schema.is_some(), "{name} lacks output schema");
     }
 }
+
+#[test]
+fn all_output_schemas_are_object_rooted() {
+    // The MCP Tool type requires outputSchema to be `{"type": "object", ...}`;
+    // strict clients (Claude Code) reject the entire tool list otherwise.
+    // Array/freeform results must use the {"result": ...} envelope.
+    let server = server_with(false, true);
+    for tool in server.registered_tools() {
+        if let Some(schema) = &tool.output_schema {
+            assert_eq!(
+                schema.get("type").and_then(|t| t.as_str()),
+                Some("object"),
+                "tool {:?} declares a non-object outputSchema root: {}",
+                tool.name,
+                serde_json::to_string(schema).unwrap_or_default(),
+            );
+        }
+    }
+}
