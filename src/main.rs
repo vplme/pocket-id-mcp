@@ -39,7 +39,10 @@ async fn main() -> ExitCode {
     {
         Ok(v) => {
             tracing::info!(
-                version = v.get("version").and_then(|x| x.as_str()).unwrap_or("unknown"),
+                version = v
+                    .get("currentVersion")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("unknown"),
                 url = %config.pocket_id_url,
                 "connected to Pocket ID"
             );
