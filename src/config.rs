@@ -16,6 +16,50 @@ pub enum Transport {
     Http,
 }
 
+/// Rendering of log records on stderr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFormat {
+    /// Human-readable, ANSI-styled when stderr is a terminal.
+    Text,
+    /// One JSON object per record, for log collectors.
+    Json,
+}
+
+impl LogFormat {
+    /// Resolve `POCKET_ID_MCP_LOG_FORMAT`, defaulting on `is_terminal`.
+    ///
+    /// Parsed separately from [`Config`] and before it, so that configuration
+    /// errors are themselves reported in the operator's chosen format.
+    /// `is_terminal` is passed in rather than probed here so the default is
+    /// testable without a pty.
+    pub fn resolve(value: Option<&str>, is_terminal: bool) -> Result<Self, ConfigError> {
+        match value.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+            // Unset means "pick for me": a terminal implies a human reading
+            // along, anything else implies a collector (Docker, systemd, k8s).
+            None | Some("") => Ok(if is_terminal {
+                LogFormat::Text
+            } else {
+                LogFormat::Json
+            }),
+            Some("text") => Ok(LogFormat::Text),
+            Some("json") => Ok(LogFormat::Json),
+            Some(other) => Err(ConfigError::Invalid {
+                var: "POCKET_ID_MCP_LOG_FORMAT",
+                reason: format!("expected \"text\" or \"json\", got {other:?}"),
+            }),
+        }
+    }
+
+    /// Resolve from the process environment and stderr's terminal status.
+    pub fn from_env() -> Result<Self, ConfigError> {
+        use std::io::IsTerminal;
+        Self::resolve(
+            std::env::var("POCKET_ID_MCP_LOG_FORMAT").ok().as_deref(),
+            std::io::stderr().is_terminal(),
+        )
+    }
+}
+
 /// OAuth-mode-only settings, present exactly when the auth mode is `oauth`.
 #[derive(Debug, Clone)]
 pub struct OAuthConfig {
@@ -542,5 +586,62 @@ mod tests {
         );
         let cfg = Config::from_vars(&vars).unwrap();
         assert_eq!(cfg.http.unwrap().public_url, "http://mcp.internal:8756");
+    }
+
+    #[test]
+    fn log_format_explicit_values() {
+        assert_eq!(
+            LogFormat::resolve(Some("text"), false).unwrap(),
+            LogFormat::Text
+        );
+        assert_eq!(
+            LogFormat::resolve(Some("json"), true).unwrap(),
+            LogFormat::Json
+        );
+        // Case and surrounding whitespace are tolerated, as elsewhere.
+        assert_eq!(
+            LogFormat::resolve(Some("  JSON "), true).unwrap(),
+            LogFormat::Json
+        );
+    }
+
+    #[test]
+    fn log_format_explicit_overrides_terminal_default() {
+        // A terminal would default to Text; an explicit json wins.
+        assert_eq!(
+            LogFormat::resolve(Some("json"), true).unwrap(),
+            LogFormat::Json
+        );
+        // A pipe would default to Json; an explicit text wins.
+        assert_eq!(
+            LogFormat::resolve(Some("text"), false).unwrap(),
+            LogFormat::Text
+        );
+    }
+
+    #[test]
+    fn log_format_defaults_by_terminal() {
+        assert_eq!(LogFormat::resolve(None, true).unwrap(), LogFormat::Text);
+        assert_eq!(LogFormat::resolve(None, false).unwrap(), LogFormat::Json);
+        // An empty value is treated as unset, matching the other vars.
+        assert_eq!(LogFormat::resolve(Some(""), true).unwrap(), LogFormat::Text);
+        assert_eq!(
+            LogFormat::resolve(Some("   "), false).unwrap(),
+            LogFormat::Json
+        );
+    }
+
+    #[test]
+    fn log_format_rejects_unknown_value() {
+        let err = LogFormat::resolve(Some("pretty"), true).unwrap_err();
+        match err {
+            ConfigError::Invalid { var, ref reason } => {
+                assert_eq!(var, "POCKET_ID_MCP_LOG_FORMAT");
+                assert!(reason.contains("text") && reason.contains("json"));
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+        // The message names the variable, so an operator can act on it.
+        assert!(err.to_string().contains("POCKET_ID_MCP_LOG_FORMAT"));
     }
 }

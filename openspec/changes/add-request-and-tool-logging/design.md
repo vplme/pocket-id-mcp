@@ -92,7 +92,7 @@ Every record uses `tracing`'s field syntax (`tool = %name, tier = ?tier, duratio
 
 ## Risks / Trade-offs
 
-- **[The request span may not reach `call_tool`]** → Whether the `TraceLayer` span is still current inside `call_tool` depends on whether `StreamableHttpService` dispatches JSON-RPC on the same task or a spawned one. If spawned, span context does not propagate and tool records would carry no request ID or actor. Mitigation: a spike verifies this before the correlation work is designed around it. If it does not propagate, the fallback is an explicit request ID carried through an axum extension or a task-local — recoverable, roughly 20 lines, and it does not affect any other decision here.
+- **[The request span does not reach `call_tool`]** → Confirmed by the spike (see Open Questions): rmcp dispatches every handler on a detached `tokio::spawn`, and on the session path the worker task outlives the request that created it. Tool records therefore carry no request ID and no actor, and neither span nesting nor an axum extension can fix it at this SDK version. Mitigation: accept uncorrelated records for this change. Both layers remain independently useful, and joining by timestamp and actor covers the audit need. Revisit if rmcp gains a per-request handler context.
 
 - **[Log volume rises substantially]** → Every read is now logged, and read tools are the high-frequency ones. Mitigation: records are single-line and bounded (collections summarized, no response data); operators who want mutations only can filter on the tier field; `RUST_LOG` continues to work for turning the whole target down.
 
@@ -110,6 +110,12 @@ No data migration and no breaking interface change. `POCKET_ID_MCP_LOG_FORMAT` i
 
 ## Open Questions
 
-- Does the `TraceLayer` span survive into `call_tool`? Resolved by the spike, which is sequenced first in tasks.
+- ~~Does the `TraceLayer` span survive into `call_tool`?~~ **Resolved: no.** Read from `rmcp` 3.1.2 source rather than by experiment, since the answer was unambiguous there. Every dispatch path hands the handler to a detached `tokio::spawn` — `serve_negotiated_request_directly` (`tower.rs:1224`), the stateless `handle_post` arm (`tower.rs:1979`), and `spawn_session_worker` (`tower.rs:1297`). `tokio::spawn` does not propagate `tracing` span context, so the axum request span is never current inside `call_tool`.
+
+  The session path this server uses (`LocalSessionManager`) is worse than the stateless one: its worker task is spawned once during `initialize`, and every subsequent `tools/call` is fed to that same long-lived task. There is therefore no per-request task at all to which a span could be attached — the tool call executes on a task created by an entirely different HTTP request.
+
+  **Consequence:** request/tool correlation cannot come from span nesting, and the fallback named in the risk register (an explicit request ID through an axum extension) does not work either, because an extension travels with a request whose task is not the one running the handler. Correlating an access record with a tool record would require rmcp to carry a per-request context into the handler; `serve_negotiated_request_directly` does insert `http::request::Parts` into the request extensions, so a future correlation could read a header from there — but only on the stateless path, not the session path.
+
+  **Decision:** ship the two log layers uncorrelated. Access records and tool records are independently useful — the access record answers "who reached the server and were they admitted", the tool record answers "what was done" — and joining them by timestamp and actor is adequate for the audit purpose. Actor attribution on the tool record itself is left as follow-up work, since it needs a mechanism this SDK version does not offer. Task 5.7 is reduced to documenting this rather than implementing threading.
 - Should `name` join the allowlist? It appears four times, is never secret material, and would make `create_api_key` and `create_group` records describe rather than merely identify. Left out of the initial list as the conservative default; adding it later is non-breaking.
 - Is JSON-when-piped the right default, or too surprising? It means `cargo run 2>&1 | less` emits JSON. The alternative is text always with JSON opt-in. Chosen as-is because container deployments are the ones that need structured output and are least likely to configure it.

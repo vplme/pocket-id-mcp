@@ -127,7 +127,17 @@ async fn oauth_middleware(
     };
 
     match oauth.authenticator.validate(token).await {
-        Ok(_claims) => next.run(request).await,
+        Ok(claims) => {
+            // The subject is the only claim logged: it identifies the caller
+            // without carrying the token or any other claim content.
+            record_actor(
+                claims
+                    .get("sub")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("(no subject)"),
+            );
+            next.run(request).await
+        }
         Err(AuthError::Unauthorized(reason)) => oauth_unauthorized(oauth, &reason),
         Err(AuthError::Forbidden(reason)) => (
             StatusCode::FORBIDDEN,
@@ -158,6 +168,10 @@ async fn static_token_middleware(
 
     let presented = bearer_token(&request).unwrap_or_default();
     if presented.as_bytes().ct_eq(expected.as_bytes()).into() {
+        // Every caller shares one secret here, so there is no identity to
+        // report — a fixed label is the honest answer, and the secret itself
+        // is never logged.
+        record_actor("static-token");
         next.run(request).await
     } else {
         let reason = if presented.is_empty() {
@@ -219,7 +233,7 @@ pub fn build_router(
     );
     let mcp = Router::new().nest_service("/mcp", mcp_service);
 
-    match state.as_ref() {
+    let routed = match state.as_ref() {
         HttpState::OAuth(_) => Router::new()
             .route(
                 "/.well-known/oauth-protected-resource",
@@ -241,7 +255,64 @@ pub fn build_router(
             static_token_middleware,
         )),
         HttpState::None => mcp,
+    };
+
+    // Outermost, so requests rejected by auth are logged too: repeated 401s
+    // and 403s are the visible signature of someone probing a server that
+    // holds an admin API key.
+    routed.layer(access_log_layer())
+}
+
+/// Field name under which each middleware records the admitted caller.
+const ACTOR_FIELD: &str = "actor";
+
+/// Record the caller on the current request span.
+///
+/// Called only after admission, so an unauthenticated request is never
+/// attributed. Never receives a token or the shared secret itself — OAuth
+/// passes the subject claim, static-token mode a fixed label.
+fn record_actor(actor: &str) {
+    tracing::Span::current().record(ACTOR_FIELD, actor);
+}
+
+/// Per-request span and completion record for every HTTP request.
+///
+/// The span exists before authentication runs, so `actor` is declared empty
+/// and filled in by whichever middleware admits the request.
+///
+/// Both the span and the completion event are emitted under this crate's
+/// target. `tower_http`'s built-in `DefaultOnResponse` would emit under
+/// `tower_http`'s own module path and at DEBUG, so the default
+/// `pocket_id_mcp=info` filter would drop every access record — an access log
+/// invisible without `RUST_LOG` is not an access log. The response fields are
+/// therefore emitted by hand rather than through `DefaultOnResponse`.
+#[allow(clippy::type_complexity)]
+fn access_log_layer() -> tower_http::trace::TraceLayer<
+    tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>,
+    fn(&Request) -> tracing::Span,
+    (),
+    fn(&Response, std::time::Duration, &tracing::Span),
+> {
+    fn make_span(request: &Request) -> tracing::Span {
+        tracing::info_span!(
+            "http_request",
+            method = %request.method(),
+            path = %request.uri().path(),
+            actor = tracing::field::Empty,
+        )
     }
+    fn on_response(response: &Response, latency: std::time::Duration, _span: &tracing::Span) {
+        tracing::info!(
+            status = response.status().as_u16(),
+            duration_ms = latency.as_millis(),
+            "http request"
+        );
+    }
+    tower_http::trace::TraceLayer::new_for_http()
+        .make_span_with(make_span as fn(&Request) -> _)
+        // The request-side event is redundant with the completion event.
+        .on_request(())
+        .on_response(on_response as fn(&Response, std::time::Duration, &tracing::Span))
 }
 
 /// Construct state, run startup validation, and serve until ctrl-c.

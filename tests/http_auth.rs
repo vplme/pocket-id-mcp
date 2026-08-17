@@ -299,6 +299,121 @@ async fn group_admission_enforced() {
     assert_eq!(claims["sub"], "user-1");
 }
 
+/// Log sink for the access-record assertions below.
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedLogs {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+#[tokio::test]
+async fn forbidden_request_is_logged_with_status() {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let issuer = MockServer::start().await;
+    mount_issuer(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), Some("admins"));
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let (router, _state) = make_router(config, client);
+    let outsider = mint_token(&issuer.uri(), RESOURCE, Some(vec!["users"]), 3600);
+
+    let logs = CapturedLogs::default();
+    // The production default filter: a record only visible under RUST_LOG
+    // would not be an access log.
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new("pocket_id_mcp=info"))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(logs.clone())
+                .with_ansi(false),
+        );
+    let guard = tracing::subscriber::set_default(subscriber);
+    let resp = router
+        .oneshot(
+            Request::post("/mcp")
+                .header(header::AUTHORIZATION, format!("Bearer {outsider}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    drop(guard);
+
+    let text = String::from_utf8_lossy(&logs.0.lock().unwrap()).into_owned();
+    assert!(text.contains("http_request"), "no access record: {text}");
+    assert!(text.contains("403"), "403 not recorded: {text}");
+    // Rejected before admission, so no caller is attributed and the token
+    // itself never appears.
+    assert!(!text.contains(&outsider), "token leaked: {text}");
+}
+
+#[tokio::test]
+async fn admitted_oauth_caller_is_attributed_by_subject() {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let issuer = MockServer::start().await;
+    mount_issuer(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), Some("admins"));
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let (router, _state) = make_router(config, client);
+    let admin = mint_token(&issuer.uri(), RESOURCE, Some(vec!["admins"]), 3600);
+
+    let logs = CapturedLogs::default();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new("pocket_id_mcp=info"))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(logs.clone())
+                .with_ansi(false),
+        );
+    let guard = tracing::subscriber::set_default(subscriber);
+    let _ = router
+        .oneshot(
+            Request::post("/mcp")
+                .header(header::HOST, "localhost")
+                .header(header::AUTHORIZATION, format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .body(Body::from(
+                    json!({
+                        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test-client", "version": "0.0.0"}
+                        }
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    drop(guard);
+
+    let text = String::from_utf8_lossy(&logs.0.lock().unwrap()).into_owned();
+    // The subject identifies the caller; the token that carried it does not
+    // appear anywhere.
+    assert!(text.contains("user-1"), "no subject attributed: {text}");
+    assert!(!text.contains(&admin), "token leaked: {text}");
+}
+
 #[tokio::test]
 async fn opaque_token_falls_back_to_pocket_id_introspection() {
     // The mock server plays both the Pocket ID upstream and the issuer.

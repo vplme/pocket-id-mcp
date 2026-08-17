@@ -59,6 +59,7 @@ On startup the server validates connectivity and the API key against `GET /api/v
 | `POCKET_ID_MCP_READ_ONLY` | no | `false` | `true`/`1`/`yes`: register only read tools |
 | `POCKET_ID_MCP_ALLOW_DANGEROUS` | no | `false` | `true`/`1`/`yes`: also register dangerous tools |
 | `POCKET_ID_MCP_TRANSPORT` | no | `stdio` | `stdio` or `http` |
+| `POCKET_ID_MCP_LOG_FORMAT` | no | `text` on a terminal, else `json` | `text` or `json` — see [Logging](#logging) |
 | `POCKET_ID_MCP_HTTP_BIND` | no | `127.0.0.1:8756` | HTTP mode: bind address |
 | `POCKET_ID_MCP_HTTP_AUTH` | no | `oauth` | HTTP mode: `oauth`, `token` (static bearer secret), or `none` (loopback only) |
 | `POCKET_ID_MCP_PUBLIC_URL` | `oauth` mode | `http://localhost:<port>` in other modes | HTTP mode: external URL of the MCP endpoint — the OAuth resource identifier (e.g. `https://mcp.example.com/mcp`) |
@@ -81,6 +82,39 @@ Every tool is classified into exactly one tier. Gated tools are **not registered
 | **dangerous** (8 tools) | User deletion, passkey deletion, one-time login token/email minting, signup-token create/delete, API-key revocation | only with `POCKET_ID_MCP_ALLOW_DANGEROUS` |
 
 > The API key itself is all-or-nothing admin power. Tiers protect against assistant mistakes, not against host compromise — prefer short-expiry keys.
+
+## Logging
+
+Logs go to **stderr** (stdout carries the MCP protocol in stdio mode) and honour `RUST_LOG`, defaulting to `pocket_id_mcp=info`.
+
+**Every tool call is logged, reads included.** This matters more than it sounds: Pocket ID's own audit log records *sign-in* events, not admin REST API writes. If an assistant deletes a user or revokes an API key through this server, these records are the only trace that it happened.
+
+```
+INFO pocket_id_mcp::server: tool call tool=delete_user tier="dangerous" params="user_id=abc123" outcome="ok" duration_ms=91
+INFO pocket_id_mcp::server: tool call tool=list_users tier="read" params="" outcome="ok" duration_ms=40
+```
+
+In HTTP mode each request is also logged, including ones rejected before reaching a tool — repeated `401`s are the visible signature of someone probing a server that holds an admin API key.
+
+```
+INFO http_request{method=POST path=/mcp actor="static-token"}: pocket_id_mcp::http: http request status=200 duration_ms=17
+INFO http_request{method=POST path=/mcp}: pocket_id_mcp::http: http request status=401 duration_ms=0
+```
+
+**What is never logged:** response bodies and tool results, at any level. Read-tier tools are where the secrets are — `get_all_application_configuration` returns LDAP and SMTP credentials, `list_api_keys` returns key records, `create_oidc_client_secret` returns a secret. Request parameters are logged only if they appear on a small allowlist of identifiers (`user_id`, `client_id`, `group_id`, `token_id`, `key_id`, …), so a record says *what* a call acted on but never carries a secret, a token, or free-text content. A parameter nobody has vetted is simply absent.
+
+**Who called** is recorded per HTTP request, according to the auth mode: the token's subject claim in `oauth` mode, a fixed `static-token` label in `token` mode (every caller shares one secret, so there is no identity to report), and nothing in `none` mode.
+
+Access records and tool records are **independent** — they cannot be correlated by a shared request ID, because the MCP SDK dispatches handlers on detached tasks and, in session mode, on a worker created by an earlier request. Join them by timestamp and actor.
+
+`POCKET_ID_MCP_LOG_FORMAT` picks the rendering: `text` (human-readable, coloured on a terminal) or `json` (one object per record, for log collectors). Unset, it detects — text when stderr is a terminal, JSON otherwise, so containers and systemd units emit structured logs with no configuration.
+
+```sh
+POCKET_ID_MCP_LOG_FORMAT=json pocket-id-mcp   # force structured output
+RUST_LOG=pocket_id_mcp=debug pocket-id-mcp    # more detail
+```
+
+> Tool calls are logged in **stdio** mode too, but there is no access log (there are no HTTP requests) and no durable sink — stderr belongs to whatever launched the process, typically a rotating log file you never read. If you need an audit trail you can keep, run HTTP mode and let your platform collect stdout/stderr.
 
 ## HTTP mode (remote / shared use)
 

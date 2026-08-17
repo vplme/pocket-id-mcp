@@ -190,4 +190,71 @@ impl ServerHandler for PocketIdServer {
             self.client.base_url()
         ))
     }
+
+    /// Dispatch a tool call, logging one record per call.
+    ///
+    /// Defined by hand so that every call passes through a single observable
+    /// point; `#[tool_handler]` only generates this method when it is absent,
+    /// so `list_tools` and `get_tool` remain macro-generated. The body is the
+    /// macro's own delegation with logging around it — unknown tool names are
+    /// still reported by `ToolRouter::call`, unchanged.
+    ///
+    /// This is the only audit trail for admin mutations made through this
+    /// server: Pocket ID's audit log records sign-in events, not REST API
+    /// writes. Every call is logged, reads included.
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<CallToolResponse, McpError> {
+        let name = request.name.to_string();
+        let tier = crate::tools::tier_for(&name);
+        // Read before dispatch: the router consumes the request.
+        let params = crate::tools::loggable_params(request.arguments.as_ref());
+        let started = std::time::Instant::now();
+
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        let result = self.tool_router.call(tcc).await;
+
+        // Field names are stable so both output formats stay queryable; the
+        // tier is rendered as a string rather than Debug for the same reason.
+        let tier_field = tier.map(|t| t.as_str()).unwrap_or("unknown");
+        let duration_ms = started.elapsed().as_millis();
+        match &result {
+            Ok(response) => {
+                // A tool-level failure (`isError`) is an outcome, not a
+                // transport error, so it is reported separately from a
+                // protocol error. Non-`Complete` variants are unreachable for
+                // this server's tools but the enum is non-exhaustive.
+                let outcome = match response {
+                    CallToolResponse::Complete(r) if r.is_error.unwrap_or(false) => "error",
+                    CallToolResponse::Complete(_) => "ok",
+                    _ => "incomplete",
+                };
+                tracing::info!(
+                    tool = %name,
+                    tier = tier_field,
+                    params = params.as_deref().unwrap_or(""),
+                    outcome,
+                    duration_ms,
+                    "tool call"
+                );
+            }
+            // `ErrorData`'s message is already sanitized upstream: tool bodies
+            // build it from `ApiError`, which extracts an error message without
+            // echoing credentials. Response content is never logged.
+            Err(e) => {
+                tracing::info!(
+                    tool = %name,
+                    tier = tier_field,
+                    params = params.as_deref().unwrap_or(""),
+                    outcome = "failed",
+                    error = %e.message,
+                    duration_ms,
+                    "tool call"
+                );
+            }
+        }
+        result
+    }
 }
