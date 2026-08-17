@@ -39,7 +39,7 @@ async fn main() -> ExitCode {
     {
         Ok(v) => {
             tracing::info!(
-                version = v.get("version").and_then(|x| x.as_str()).unwrap_or("unknown"),
+                version = version_from_payload(&v).unwrap_or("unknown"),
                 url = %config.pocket_id_url,
                 "connected to Pocket ID"
             );
@@ -92,4 +92,62 @@ async fn main() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// Pull the version string out of `GET /api/version/current`.
+///
+/// The endpoint is typed as `map[string]string` in the Pocket ID swagger, so the
+/// key is not contractual: v2.13 answers `{"currentVersion":"2.13.0"}`. Accept the
+/// known spellings and otherwise fall back to any single string value.
+fn version_from_payload(v: &serde_json::Value) -> Option<&str> {
+    for key in ["currentVersion", "version", "current_version"] {
+        if let Some(s) = v.get(key).and_then(|x| x.as_str()) {
+            return Some(s);
+        }
+    }
+    match v.as_object() {
+        Some(map) if map.len() == 1 => map.values().next().and_then(|x| x.as_str()),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version_from_payload;
+    use serde_json::json;
+
+    #[test]
+    fn reads_pocket_id_current_version_key() {
+        assert_eq!(
+            version_from_payload(&json!({"currentVersion": "2.13.0"})),
+            Some("2.13.0")
+        );
+    }
+
+    #[test]
+    fn reads_alternate_spellings() {
+        assert_eq!(
+            version_from_payload(&json!({"version": "1.2.3"})),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            version_from_payload(&json!({"current_version": "1.2.3"})),
+            Some("1.2.3")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_lone_string_value() {
+        assert_eq!(
+            version_from_payload(&json!({"somethingElse": "9.9.9"})),
+            Some("9.9.9")
+        );
+    }
+
+    #[test]
+    fn returns_none_when_ambiguous_or_missing() {
+        assert_eq!(version_from_payload(&json!({})), None);
+        assert_eq!(version_from_payload(&json!({"a": "1", "b": "2"})), None);
+        assert_eq!(version_from_payload(&json!("2.13.0")), None);
+    }
 }
