@@ -248,7 +248,11 @@ impl ServerHandler for PocketIdServer {
         // Field names are stable so both output formats stay queryable; the
         // tier is rendered as a string rather than Debug for the same reason.
         let tier_field = tier.map(|t| t.as_str()).unwrap_or("unknown");
-        let duration_ms = started.elapsed().as_millis();
+        // `u64`, not `as_millis()`'s `u128`: `u128` has no `tracing::Value`
+        // impl, so it falls back to `Debug` and is emitted as the *string*
+        // `"6"` in JSON output rather than a number, which a collector cannot
+        // range-query. Saturating rather than wrapping on the absurd overflow.
+        let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match &result {
             Ok(response) => {
                 // A tool-level failure (`isError`) is an outcome, not a

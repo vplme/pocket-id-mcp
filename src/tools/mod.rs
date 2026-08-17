@@ -220,6 +220,30 @@ const LOGGED_PARAMS: &[(&str, &str)] = &[
 /// so a bulk membership rewrite cannot emit a multi-kilobyte log line.
 const MAX_LOGGED_COLLECTION: usize = 5;
 
+/// Longest rendered value, in bytes. The element-count cap above bounds how
+/// many items are rendered but not how long each is: these are identifiers by
+/// contract, not by validation, and nothing stops a client sending a megabyte
+/// string as `user_id` (or five of them in `user_ids`). Without this, one call
+/// writes a megabyte to the audit log — the same denial-of-disk the collection
+/// cap exists to prevent. Generous enough that a real identifier is never
+/// touched.
+const MAX_LOGGED_VALUE_LEN: usize = 256;
+
+/// Truncate at a char boundary, marking that it happened so a truncated value
+/// is never mistaken for the identifier actually sent.
+fn truncate_value(mut s: String) -> String {
+    if s.len() <= MAX_LOGGED_VALUE_LEN {
+        return s;
+    }
+    let mut end = MAX_LOGGED_VALUE_LEN;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
+    s.push_str("...(truncated)");
+    s
+}
+
 /// The allowlisted parameters of a tool call, as `(log field name, value)`.
 ///
 /// Each pair becomes its own log field, so `user_id` is queryable as
@@ -245,7 +269,7 @@ pub fn loggable_params(
             continue;
         };
         match value {
-            serde_json::Value::String(s) => pairs.push((field, s.clone())),
+            serde_json::Value::String(s) => pairs.push((field, truncate_value(s.clone()))),
             serde_json::Value::Array(items) => {
                 let rendered = if items.len() > MAX_LOGGED_COLLECTION {
                     format!("[{} items]", items.len())
@@ -257,7 +281,9 @@ pub fn loggable_params(
                             other => other.to_string(),
                         })
                         .collect();
-                    format!("[{}]", joined.join(","))
+                    // Truncate the joined rendering, so a handful of very long
+                    // elements is bounded just as a long single value is.
+                    truncate_value(format!("[{}]", joined.join(",")))
                 };
                 pairs.push((field, rendered));
             }
@@ -422,6 +448,47 @@ mod tests {
             pairs[0].1.len() < 64,
             "collection summary must stay bounded"
         );
+    }
+
+    #[test]
+    fn loggable_params_bounds_oversized_values() {
+        // The element-count cap does not bound element *length*: an identifier
+        // is one by contract, not by validation, so a client can send a huge
+        // string under an allowlisted name.
+        let huge = "x".repeat(100_000);
+        let a = args(serde_json::json!({ "user_id": huge }));
+        let pairs = loggable_params(Some(&a));
+        assert!(
+            pairs[0].1.len() < MAX_LOGGED_VALUE_LEN + 32,
+            "oversized value not bounded: {} bytes",
+            pairs[0].1.len()
+        );
+        assert!(pairs[0].1.ends_with("...(truncated)"));
+
+        // A short collection of long elements passes the count cap, so the
+        // joined rendering must be bounded too.
+        let long_ids: Vec<String> = (0..3).map(|_| "y".repeat(10_000)).collect();
+        let a = args(serde_json::json!({ "user_ids": long_ids }));
+        let pairs = loggable_params(Some(&a));
+        assert!(
+            pairs[0].1.len() < MAX_LOGGED_VALUE_LEN + 32,
+            "oversized collection not bounded: {} bytes",
+            pairs[0].1.len()
+        );
+    }
+
+    #[test]
+    fn truncation_respects_char_boundaries() {
+        // Truncating mid-codepoint would panic; a multi-byte value must survive.
+        let multibyte = "é".repeat(1_000);
+        let a = args(serde_json::json!({ "user_id": multibyte }));
+        let pairs = loggable_params(Some(&a));
+        assert!(pairs[0].1.ends_with("...(truncated)"));
+
+        // A value at exactly the limit is left untouched.
+        let exact = "z".repeat(MAX_LOGGED_VALUE_LEN);
+        let a = args(serde_json::json!({ "user_id": exact.clone() }));
+        assert_eq!(loggable_params(Some(&a))[0].1, exact);
     }
 
     #[test]

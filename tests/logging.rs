@@ -401,7 +401,35 @@ async fn json_format_emits_parseable_records() {
     assert_eq!(fields.get("tool").unwrap(), "get_user");
     assert_eq!(fields.get("tier").unwrap(), "read");
     assert_eq!(fields.get("outcome").unwrap(), "error");
-    assert!(fields.get("duration_ms").is_some(), "no duration");
+    // A *number*, not a string: `u128` would fall back to `Debug` and render as
+    // `"6"`, which no collector can range-query.
+    let duration = fields.get("duration_ms").expect("no duration");
+    assert!(
+        duration.is_number(),
+        "duration_ms must be a JSON number, got {duration}"
+    );
+
+    // The access record shares the requirement.
+    let access_record = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|v| {
+            v.get("fields")
+                .and_then(|f| f.get("message"))
+                .and_then(|m| m.as_str())
+                == Some("http request")
+        })
+        .unwrap_or_else(|| panic!("no JSON access record in: {text}"));
+    let access_fields = access_record.get("fields").unwrap();
+    assert!(
+        access_fields.get("status").unwrap().is_number(),
+        "status must be a JSON number"
+    );
+    assert!(
+        access_fields.get("duration_ms").unwrap().is_number(),
+        "duration_ms must be a JSON number, got {}",
+        access_fields.get("duration_ms").unwrap()
+    );
 
     // Parameters ride on the enclosing span, each as its own namespaced key —
     // queryable directly rather than parsed out of an encoded string.

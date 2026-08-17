@@ -48,6 +48,10 @@ Each logged parameter SHALL be emitted as its own named field, namespaced under 
 - **WHEN** a call passes an identifier collection large enough to make a log line unwieldy
 - **THEN** the record summarizes the collection rather than emitting every element
 
+#### Scenario: Oversized parameter values bounded
+- **WHEN** a client sends an allowlisted parameter whose value is far larger than any real identifier
+- **THEN** the logged value is truncated and marked as truncated, so a single call cannot write an unbounded amount to the log and a clipped value is not mistaken for the value actually sent
+
 ### Requirement: Response bodies are never logged
 The server SHALL NOT write any part of a Pocket ID API response body, or any tool result content, to its logs at any log level. Read-tier tools return credential material — `get_all_application_configuration` returns LDAP and SMTP settings, `list_api_keys` returns key records, `create_oidc_client_secret` returns a client secret, and one-time access tools return usable tokens — so the prohibition covers success responses as well as errors. Error records SHALL carry only the already-sanitized `ApiError` display form, which extracts a message without echoing credentials.
 
@@ -107,6 +111,10 @@ The server SHALL support a human-readable text format and a machine-parseable JS
 #### Scenario: Invalid format value
 - **WHEN** `POCKET_ID_MCP_LOG_FORMAT` is set to an unrecognized value
 - **THEN** the server exits non-zero before serving with a message naming the variable and the accepted values
+
+#### Scenario: Numeric fields are numbers in structured output
+- **WHEN** a record carrying a latency or an HTTP status is emitted in JSON format
+- **THEN** those fields are JSON numbers rather than quoted strings, so a collector can range-query and aggregate them without coercion
 
 ### Requirement: Logging respects existing filter configuration
 Log records SHALL be emitted through the existing `tracing` subscriber and remain subject to `RUST_LOG`, preserving the current default filter of `pocket_id_mcp=info`. Logging SHALL be written to the standard error stream, leaving standard output free for the stdio transport's MCP protocol traffic.

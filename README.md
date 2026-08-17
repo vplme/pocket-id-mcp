@@ -114,7 +114,7 @@ INFO http_request{method=POST path=/mcp}: pocket_id_mcp::http: http request stat
 
 **Who called** is recorded per HTTP request, according to the auth mode: the token's subject claim in `oauth` mode, a fixed `static-token` label in `token` mode (every caller shares one secret, so there is no identity to report), and nothing in `none` mode.
 
-Access records and tool records are **independent** — they cannot be correlated by a shared request ID, because the MCP SDK dispatches handlers on detached tasks and, in session mode, on a worker created by an earlier request. Join them by timestamp and actor.
+Access records and tool records are **independent** — they cannot be correlated by a shared request ID, because the MCP SDK dispatches handlers on detached tasks and, in session mode, on a worker created by an earlier request. Join them by timestamp and actor, bearing in mind that a tool record *trails* its access record rather than nesting inside it: the HTTP response completes while the handler is still running on its own task.
 
 `POCKET_ID_MCP_LOG_FORMAT` picks the rendering: `text` (human-readable, coloured on a terminal) or `json` (one object per record, for log collectors). Unset, it detects — text when stderr is a terminal, JSON otherwise, so containers and systemd units emit structured logs with no configuration.
 

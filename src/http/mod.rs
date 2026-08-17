@@ -304,7 +304,13 @@ fn access_log_layer() -> tower_http::trace::TraceLayer<
     fn on_response(response: &Response, latency: std::time::Duration, _span: &tracing::Span) {
         tracing::info!(
             status = response.status().as_u16(),
-            duration_ms = latency.as_millis(),
+            // `u64`, not `as_millis()`'s `u128`: `u128` has no `tracing::Value`
+            // impl, so it falls back to `Debug` and renders as the *string*
+            // `"17"` in JSON output, where `status` renders as a number. A
+            // collector cannot range-query a string, which defeats the point of
+            // the JSON format. Saturating: a request outlasting 584M years is
+            // not a duration worth preserving exactly.
+            duration_ms = u64::try_from(latency.as_millis()).unwrap_or(u64::MAX),
             "http request"
         );
     }

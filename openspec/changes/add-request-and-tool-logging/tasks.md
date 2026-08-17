@@ -66,9 +66,18 @@ Follow-up from running the merged build: `params` was a single field holding an 
 - [x] 7.8 Extend the JSON test to assert parameters are discrete keys on the span and that unrecorded slots are absent
 - [x] 7.9 Tighten the `observability` spec, which said only that parameters "SHALL be included" — the looseness that allowed the collapsed encoding
 
-## 8. Documentation
+## 8. Review fixes
 
-- [x] 8.1 Add `POCKET_ID_MCP_LOG_FORMAT` to the environment variable table in `README.md`
-- [x] 8.2 Document what is logged, what is deliberately never logged, and the actor semantics of each HTTP auth mode — sample records were copied from real captured output rather than written by hand
-- [x] 8.3 Note that stdio deployments get tool records but no access records, and that no durable sink is provided
-- [x] 8.4 Update the sample records and document the `params.` field convention after the per-parameter change
+- [x] 8.1 Emit `duration_ms` as `u64` rather than `u128` on both the tool record and the access record — `u128` has no `tracing::Value` impl and fell back to `Debug`, rendering as the JSON *string* `"17"` next to a numeric `status`, so latency alerts could never match. Verified by reintroducing the fault and watching the strengthened test fail
+- [x] 8.2 Bound the length of individual logged values, not just collection element counts: allowlisted names are identifiers by contract but not by validation, so an oversized value would otherwise be written verbatim. Truncates on a char boundary — a naive cut panics on multi-byte UTF-8 — and marks the value as truncated
+- [x] 8.3 Strengthen the JSON test to assert `is_number()` on `duration_ms` and `status` for both record types; the previous assertion checked only presence, which is why it passed against the defect
+- [x] 8.4 Add unit tests for oversized-value bounding and char-boundary safety
+- [x] 8.5 Record both rules in the `observability` spec — neither had coverage, which is how the defect passed review-by-spec
+
+## 9. Documentation
+
+- [x] 9.1 Add `POCKET_ID_MCP_LOG_FORMAT` to the environment variable table in `README.md`
+- [x] 9.2 Document what is logged, what is deliberately never logged, and the actor semantics of each HTTP auth mode — sample records were copied from real captured output rather than written by hand
+- [x] 9.3 Note that stdio deployments get tool records but no access records, and that no durable sink is provided
+- [x] 9.4 Update the sample records and document the `params.` field convention after the per-parameter change
+- [x] 9.5 Note that a tool record trails its access record rather than nesting inside it, since the HTTP response completes while the handler runs on a detached task — relevant to joining the two layers by timestamp
