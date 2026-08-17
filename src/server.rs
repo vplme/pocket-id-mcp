@@ -236,10 +236,14 @@ impl ServerHandler for PocketIdServer {
         for (field, value) in &params {
             span.record(*field, value.as_str());
         }
-        let _entered = span.enter();
 
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         let result = self.tool_router.call(tcc).await;
+
+        // Entered *after* the await, immediately around the record below,
+        // rather than held across it: a synchronous span guard does not travel
+        // with a future resumed on another task.
+        let _entered = span.enter();
 
         // Field names are stable so both output formats stay queryable; the
         // tier is rendered as a string rather than Debug for the same reason.
