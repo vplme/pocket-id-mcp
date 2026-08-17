@@ -213,6 +213,31 @@ impl ServerHandler for PocketIdServer {
         let params = crate::tools::loggable_params(request.arguments.as_ref());
         let started = std::time::Instant::now();
 
+        // Each parameter is carried as its own `params.*` field rather than
+        // one encoded string, so it stays queryable in JSON output. Field
+        // names must be known at compile time and `record` only fills a field
+        // the span already declares, so every allowlisted name is declared
+        // here as `Empty`; the ones absent from this call are never rendered.
+        let span = tracing::info_span!(
+            "tool_params",
+            params.user_id = tracing::field::Empty,
+            params.client_id = tracing::field::Empty,
+            params.group_id = tracing::field::Empty,
+            params.image_type = tracing::field::Empty,
+            params.api_id = tracing::field::Empty,
+            params.provider_id = tracing::field::Empty,
+            params.token_id = tracing::field::Empty,
+            params.key_id = tracing::field::Empty,
+            params.credential_id = tracing::field::Empty,
+            params.user_ids = tracing::field::Empty,
+            params.user_group_ids = tracing::field::Empty,
+            params.oidc_client_ids = tracing::field::Empty,
+        );
+        for (field, value) in &params {
+            span.record(*field, value.as_str());
+        }
+        let _entered = span.enter();
+
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         let result = self.tool_router.call(tcc).await;
 
@@ -234,7 +259,6 @@ impl ServerHandler for PocketIdServer {
                 tracing::info!(
                     tool = %name,
                     tier = tier_field,
-                    params = params.as_deref().unwrap_or(""),
                     outcome,
                     duration_ms,
                     "tool call"
@@ -247,7 +271,6 @@ impl ServerHandler for PocketIdServer {
                 tracing::info!(
                     tool = %name,
                     tier = tier_field,
-                    params = params.as_deref().unwrap_or(""),
                     outcome = "failed",
                     error = %e.message,
                     duration_ms,

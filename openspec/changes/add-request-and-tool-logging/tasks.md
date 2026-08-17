@@ -52,8 +52,23 @@
 - [x] 6.9 Assert a `403` group-admission rejection produces an access record in `tests/http_auth.rs`, which already has the OAuth fixture
 - [x] 6.10 Integration test: an admitted OAuth caller is attributed by its subject claim, with the bearer token absent from the log
 
-## 7. Documentation
+## 7. Per-parameter log fields
 
-- [x] 7.1 Add `POCKET_ID_MCP_LOG_FORMAT` to the environment variable table in `README.md`
-- [x] 7.2 Document what is logged, what is deliberately never logged, and the actor semantics of each HTTP auth mode — sample records were copied from real captured output rather than written by hand
-- [x] 7.3 Note that stdio deployments get tool records but no access records, and that no durable sink is provided
+Follow-up from running the merged build: `params` was a single field holding an encoded string, which is unqueryable in JSON and emitted `params=""` on calls with nothing allowlisted.
+
+- [x] 7.1 Measure how `tracing` renders the candidate encodings before choosing — a `serde_json::Value` field is stringified *and escaped* in JSON mode, so it cannot give real nesting
+- [x] 7.2 Change `LOGGED_PARAMS` to pair each argument name with its `params.<name>` log field, keeping the two together so they cannot drift
+- [x] 7.3 Change `loggable_params` to return `(field name, value)` pairs instead of a joined string
+- [x] 7.4 Carry the pairs on a `tool_params` span declaring every allowlisted name as `field::Empty` — events cannot be `record`ed, so a span is the only way to attach a dynamically-selected set of named fields — and drop the `params` field from both event sites
+- [x] 7.5 Update the unit tests to the pair-returning shape, and add one asserting every allowlist field name matches `params.<argument name>`
+- [x] 7.6 Integration test: an allowlisted parameter appears as its own `params.<name>` field, not as text inside another field
+- [x] 7.7 Integration test: a call with no allowlisted parameters emits no `params.` field at all
+- [x] 7.8 Extend the JSON test to assert parameters are discrete keys on the span and that unrecorded slots are absent
+- [x] 7.9 Tighten the `observability` spec, which said only that parameters "SHALL be included" — the looseness that allowed the collapsed encoding
+
+## 8. Documentation
+
+- [x] 8.1 Add `POCKET_ID_MCP_LOG_FORMAT` to the environment variable table in `README.md`
+- [x] 8.2 Document what is logged, what is deliberately never logged, and the actor semantics of each HTTP auth mode — sample records were copied from real captured output rather than written by hand
+- [x] 8.3 Note that stdio deployments get tool records but no access records, and that no durable sink is provided
+- [x] 8.4 Update the sample records and document the `params.` field convention after the per-parameter change

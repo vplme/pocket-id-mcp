@@ -22,9 +22,19 @@ The server SHALL emit one log record for every `tools/call` request in every tra
 ### Requirement: Request parameter logging by allowlist
 Tool call records SHALL include request parameters whose names appear in a static allowlist of identifying parameters, so that a record states what the call acted upon. Parameters not on the allowlist SHALL be omitted entirely. The allowlist SHALL contain identifier and identifier-collection parameters only — at minimum `user_id`, `client_id`, `group_id`, `image_type`, `api_id`, `provider_id`, `token_id`, `key_id`, `credential_id`, `user_ids`, `user_group_ids`, and `oidc_client_ids`. A parameter name absent from the allowlist SHALL be dropped rather than logged, so that newly added tools fail closed.
 
+Each logged parameter SHALL be emitted as its own named field, namespaced under `params.` — `params.user_id`, `params.group_id`, and so on — rather than collapsed into a single field holding an encoded string. The namespace follows the dotted convention used by OpenTelemetry semantic conventions and Elastic Common Schema, keeps parameters visually grouped in text output, and prevents a tool parameter from ever colliding with a server-side field name such as `tool` or `outcome`. A parameter that is absent from a call SHALL NOT be rendered at all, so a call with no allowlisted parameters emits no parameter fields rather than an empty one.
+
 #### Scenario: Identifying parameter logged
 - **WHEN** `set_user_groups` is called with a `user_id` and a list of `user_group_ids`
-- **THEN** the log record carries the user ID and the group ID collection
+- **THEN** the log record carries the user ID and the group ID collection as separate `params.user_id` and `params.user_group_ids` fields
+
+#### Scenario: Parameters queryable in structured output
+- **WHEN** a tool call is logged in JSON format with an allowlisted parameter present
+- **THEN** that parameter appears as a discrete key named `params.<name>` whose value is the parameter value, not as text embedded in another field's string
+
+#### Scenario: Absent parameters emit no fields
+- **WHEN** a tool is called with no allowlisted parameters, such as `list_users`
+- **THEN** the record carries no `params.` field at all, rather than an empty one
 
 #### Scenario: Secret-bearing parameter omitted
 - **WHEN** `introspect_token` is called with a `token` parameter holding a bearer token

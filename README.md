@@ -90,9 +90,18 @@ Logs go to **stderr** (stdout carries the MCP protocol in stdio mode) and honour
 **Every tool call is logged, reads included.** This matters more than it sounds: Pocket ID's own audit log records *sign-in* events, not admin REST API writes. If an assistant deletes a user or revokes an API key through this server, these records are the only trace that it happened.
 
 ```
-INFO pocket_id_mcp::server: tool call tool=delete_user tier="dangerous" params="user_id=abc123" outcome="ok" duration_ms=91
-INFO pocket_id_mcp::server: tool call tool=list_users tier="read" params="" outcome="ok" duration_ms=40
+INFO tool_params{params.user_id="abc123"}: pocket_id_mcp::server: tool call tool=delete_user tier="dangerous" outcome="ok" duration_ms=91
+INFO pocket_id_mcp::server: tool call tool=list_users tier="read" outcome="ok" duration_ms=40
 ```
+
+Each logged parameter is its own field, namespaced under `params.` following the dotted convention used by [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/general/naming/) and Elastic Common Schema. In JSON mode they are discrete keys you can filter on directly, rather than text to parse out of a string:
+
+```json
+{"fields":{"message":"tool call","tool":"delete_user","tier":"dangerous","outcome":"ok","duration_ms":91},
+ "spans":[{"params.user_id":"abc123","name":"tool_params"}]}
+```
+
+A call with no allowlisted parameters — `list_users` above — emits no `params.` fields at all.
 
 In HTTP mode each request is also logged, including ones rejected before reaching a tool — repeated `401`s are the visible signature of someone probing a server that holds an admin API key.
 
@@ -101,7 +110,7 @@ INFO http_request{method=POST path=/mcp actor="static-token"}: pocket_id_mcp::ht
 INFO http_request{method=POST path=/mcp}: pocket_id_mcp::http: http request status=401 duration_ms=0
 ```
 
-**What is never logged:** response bodies and tool results, at any level. Read-tier tools are where the secrets are — `get_all_application_configuration` returns LDAP and SMTP credentials, `list_api_keys` returns key records, `create_oidc_client_secret` returns a secret. Request parameters are logged only if they appear on a small allowlist of identifiers (`user_id`, `client_id`, `group_id`, `token_id`, `key_id`, …), so a record says *what* a call acted on but never carries a secret, a token, or free-text content. A parameter nobody has vetted is simply absent.
+**What is never logged:** response bodies and tool results, at any level. Read-tier tools are where the secrets are — `get_all_application_configuration` returns LDAP and SMTP credentials, `list_api_keys` returns key records, `create_oidc_client_secret` returns a secret. Request parameters are logged only if they appear on a small allowlist of identifiers (`user_id`, `client_id`, `group_id`, `token_id`, `key_id`, …), so a record says *what* a call acted on but never carries a secret, a token, or free-text content. A parameter nobody has vetted is simply absent — note that `token_id` is logged while `token` is not, which is why the list is an allowlist rather than a blocklist.
 
 **Who called** is recorded per HTTP request, according to the auth mode: the token's subject claim in `oauth` mode, a fixed `static-token` label in `token` mode (every caller shares one secret, so there is no identity to report), and nothing in `none` mode.
 

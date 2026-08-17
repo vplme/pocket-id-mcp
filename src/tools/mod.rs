@@ -194,45 +194,58 @@ pub const CATALOG: &[ToolSpec] = catalog! {
 /// Entries are identifiers and identifier collections only. Free-text and
 /// structured payloads (`name`, `config`, `claims`, ...) are omitted on
 /// purpose — a record states *what* was acted upon, not what it was changed to.
-const LOGGED_PARAMS: &[&str] = &[
-    "user_id",
-    "client_id",
-    "group_id",
-    "image_type",
-    "api_id",
-    "provider_id",
-    "token_id",
-    "key_id",
-    "credential_id",
-    "user_ids",
-    "user_group_ids",
-    "oidc_client_ids",
+/// Each entry pairs the argument name with the log field it is emitted as.
+/// The field name is namespaced under `params.` following the dotted
+/// convention of OpenTelemetry semconv and Elastic Common Schema: it groups
+/// parameters visually in text output, and guarantees a tool parameter can
+/// never collide with a server-side field such as `tool` or `outcome`. The two
+/// names live together so they cannot drift apart, and the field name is
+/// `'static` because `Span::record` requires it.
+const LOGGED_PARAMS: &[(&str, &str)] = &[
+    ("user_id", "params.user_id"),
+    ("client_id", "params.client_id"),
+    ("group_id", "params.group_id"),
+    ("image_type", "params.image_type"),
+    ("api_id", "params.api_id"),
+    ("provider_id", "params.provider_id"),
+    ("token_id", "params.token_id"),
+    ("key_id", "params.key_id"),
+    ("credential_id", "params.credential_id"),
+    ("user_ids", "params.user_ids"),
+    ("user_group_ids", "params.user_group_ids"),
+    ("oidc_client_ids", "params.oidc_client_ids"),
 ];
 
 /// Longest collection rendered element-by-element; longer ones are summarized
 /// so a bulk membership rewrite cannot emit a multi-kilobyte log line.
 const MAX_LOGGED_COLLECTION: usize = 5;
 
-/// Render the allowlisted parameters of a tool call for logging.
+/// The allowlisted parameters of a tool call, as `(log field name, value)`.
 ///
-/// Returns `None` when nothing is loggable, so the caller can omit the field
-/// rather than emit an empty one. Only top-level keys are considered: every
-/// nested params struct uses `#[serde(flatten)]`, so identifiers always arrive
-/// at the top level of the arguments object, and anything genuinely nested
-/// (`config`, `claims`) is not on the allowlist anyway.
+/// Each pair becomes its own log field, so `user_id` is queryable as
+/// `params.user_id` rather than being encoded into a shared string. Returns an
+/// empty vector when nothing is loggable, which the caller renders as no
+/// parameter fields at all.
+///
+/// Only top-level keys are considered: every nested params struct uses
+/// `#[serde(flatten)]`, so identifiers always arrive at the top level of the
+/// arguments object, and anything genuinely nested (`config`, `claims`) is not
+/// on the allowlist anyway.
 pub fn loggable_params(
     arguments: Option<&serde_json::Map<String, serde_json::Value>>,
-) -> Option<String> {
-    let arguments = arguments?;
-    let mut parts: Vec<String> = Vec::new();
+) -> Vec<(&'static str, String)> {
+    let Some(arguments) = arguments else {
+        return Vec::new();
+    };
+    let mut pairs: Vec<(&'static str, String)> = Vec::new();
     // Iterate the allowlist, not the arguments, so output order is stable and
     // an unvetted key can never reach the log by any path.
-    for key in LOGGED_PARAMS {
+    for (key, field) in LOGGED_PARAMS {
         let Some(value) = arguments.get(*key) else {
             continue;
         };
         match value {
-            serde_json::Value::String(s) => parts.push(format!("{key}={s}")),
+            serde_json::Value::String(s) => pairs.push((field, s.clone())),
             serde_json::Value::Array(items) => {
                 let rendered = if items.len() > MAX_LOGGED_COLLECTION {
                     format!("[{} items]", items.len())
@@ -246,21 +259,17 @@ pub fn loggable_params(
                         .collect();
                     format!("[{}]", joined.join(","))
                 };
-                parts.push(format!("{key}={rendered}"));
+                pairs.push((field, rendered));
             }
             // Numbers and booleans are harmless; anything structured is not
             // rendered, since an allowlisted identifier is never an object.
             serde_json::Value::Number(_) | serde_json::Value::Bool(_) => {
-                parts.push(format!("{key}={value}"))
+                pairs.push((field, value.to_string()))
             }
             _ => {}
         }
     }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join(" "))
-    }
+    pairs
 }
 
 const PATH_SEGMENT: &AsciiSet = &CONTROLS
@@ -333,10 +342,23 @@ mod tests {
         assert_eq!(Tier::Dangerous.to_string(), "dangerous");
     }
 
+    /// All rendered values joined, for leak assertions.
+    fn joined(pairs: &[(&'static str, String)]) -> String {
+        pairs
+            .iter()
+            .map(|(f, v)| format!("{f}={v}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     #[test]
     fn loggable_params_keeps_identifiers() {
         let a = args(serde_json::json!({ "user_id": "abc123" }));
-        assert_eq!(loggable_params(Some(&a)).unwrap(), "user_id=abc123");
+        // Each parameter is its own field, namespaced under `params.`.
+        assert_eq!(
+            loggable_params(Some(&a)),
+            vec![("params.user_id", "abc123".to_string())]
+        );
     }
 
     #[test]
@@ -346,16 +368,17 @@ mod tests {
             "token": "eyJhbGciOiJIUzI1NiJ9.secret-payload",
             "client_id": "my-client",
         }));
-        let rendered = loggable_params(Some(&a)).unwrap();
-        assert_eq!(rendered, "client_id=my-client");
+        let pairs = loggable_params(Some(&a));
+        assert_eq!(pairs, vec![("params.client_id", "my-client".to_string())]);
+        let rendered = joined(&pairs);
         assert!(!rendered.contains("secret-payload"));
         assert!(!rendered.contains("eyJ"));
 
         // A bare `key` is API key material; `key_id` merely identifies one.
         let a = args(serde_json::json!({ "key": "pid_live_abcdef", "key_id": "k-1" }));
-        let rendered = loggable_params(Some(&a)).unwrap();
-        assert_eq!(rendered, "key_id=k-1");
-        assert!(!rendered.contains("pid_live_abcdef"));
+        let pairs = loggable_params(Some(&a));
+        assert_eq!(pairs, vec![("params.key_id", "k-1".to_string())]);
+        assert!(!joined(&pairs).contains("pid_live_abcdef"));
     }
 
     #[test]
@@ -363,7 +386,10 @@ mod tests {
         // The denylist trap: these must survive even though `token` and `key`
         // must not.
         let a = args(serde_json::json!({ "token_id": "t-1" }));
-        assert_eq!(loggable_params(Some(&a)).unwrap(), "token_id=t-1");
+        assert_eq!(
+            loggable_params(Some(&a)),
+            vec![("params.token_id", "t-1".to_string())]
+        );
     }
 
     #[test]
@@ -374,36 +400,60 @@ mod tests {
             "config": { "ldapBindPassword": "hunter2" },
             "claims": { "department": "eng" },
         }));
-        assert_eq!(loggable_params(Some(&a)), None);
+        assert!(loggable_params(Some(&a)).is_empty());
     }
 
     #[test]
     fn loggable_params_summarizes_large_collections() {
         let small = args(serde_json::json!({ "user_group_ids": ["g1", "g2"] }));
         assert_eq!(
-            loggable_params(Some(&small)).unwrap(),
-            "user_group_ids=[g1,g2]"
+            loggable_params(Some(&small)),
+            vec![("params.user_group_ids", "[g1,g2]".to_string())]
         );
 
         let ids: Vec<String> = (0..500).map(|i| format!("g{i}")).collect();
         let large = args(serde_json::json!({ "user_group_ids": ids }));
-        let rendered = loggable_params(Some(&large)).unwrap();
-        assert_eq!(rendered, "user_group_ids=[500 items]");
-        assert!(rendered.len() < 64, "collection summary must stay bounded");
+        let pairs = loggable_params(Some(&large));
+        assert_eq!(
+            pairs,
+            vec![("params.user_group_ids", "[500 items]".to_string())]
+        );
+        assert!(
+            pairs[0].1.len() < 64,
+            "collection summary must stay bounded"
+        );
     }
 
     #[test]
     fn loggable_params_absent_when_nothing_allowlisted() {
-        assert_eq!(loggable_params(None), None);
+        assert!(loggable_params(None).is_empty());
         let empty = args(serde_json::json!({}));
-        assert_eq!(loggable_params(Some(&empty)), None);
+        assert!(loggable_params(Some(&empty)).is_empty());
     }
 
     #[test]
     fn loggable_params_order_is_stable() {
         // Driven by the allowlist's order, not the caller's key order.
         let a = args(serde_json::json!({ "group_id": "g", "user_id": "u" }));
-        assert_eq!(loggable_params(Some(&a)).unwrap(), "user_id=u group_id=g");
+        assert_eq!(
+            loggable_params(Some(&a)),
+            vec![
+                ("params.user_id", "u".to_string()),
+                ("params.group_id", "g".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn every_allowlist_field_is_namespaced_and_matches_its_key() {
+        // The two names live together precisely so they cannot drift.
+        for (key, field) in LOGGED_PARAMS {
+            assert_eq!(
+                *field,
+                format!("params.{key}"),
+                "field name does not match its argument name"
+            );
+        }
     }
 
     #[test]

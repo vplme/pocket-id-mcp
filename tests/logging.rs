@@ -245,9 +245,26 @@ async fn tool_call_records_name_tier_and_allowlisted_params() {
     assert!(logs.contains("tool call"), "no tool record: {logs}");
     assert!(logs.contains("tool=get_user"), "no tool name: {logs}");
     assert!(logs.contains(r#"tier="read""#), "no tier: {logs}");
+    // The parameter is its own namespaced field, not text inside another one.
     assert!(
-        logs.contains("user-abc-123"),
-        "allowlisted param missing: {logs}"
+        logs.contains(r#"params.user_id="user-abc-123""#),
+        "allowlisted param missing or not namespaced: {logs}"
+    );
+}
+
+#[tokio::test]
+async fn tool_call_without_allowlisted_params_emits_no_param_fields() {
+    let logs = capture_logs(|| async {
+        // `list_users` takes only paging and search params, none allowlisted.
+        call_tool_over_http(make_router("none"), None, "list_users", json!({})).await;
+    })
+    .await;
+
+    assert!(logs.contains("tool call"), "no tool record: {logs}");
+    // Unset fields must not render at all — no empty `params` placeholder.
+    assert!(
+        !logs.contains("params."),
+        "unset parameter fields rendered: {logs}"
     );
 }
 
@@ -385,4 +402,21 @@ async fn json_format_emits_parseable_records() {
     assert_eq!(fields.get("tier").unwrap(), "read");
     assert_eq!(fields.get("outcome").unwrap(), "error");
     assert!(fields.get("duration_ms").is_some(), "no duration");
+
+    // Parameters ride on the enclosing span, each as its own namespaced key —
+    // queryable directly rather than parsed out of an encoded string.
+    let spans = tool_record
+        .get("spans")
+        .and_then(|s| s.as_array())
+        .unwrap_or_else(|| panic!("no spans in: {tool_record}"));
+    let params_span = spans
+        .iter()
+        .find(|s| s.get("params.user_id").is_some())
+        .unwrap_or_else(|| panic!("no param span in: {tool_record}"));
+    assert_eq!(params_span.get("params.user_id").unwrap(), "user-abc-123");
+    // Declared but unrecorded slots must not appear.
+    assert!(
+        params_span.get("params.group_id").is_none(),
+        "unset parameter rendered: {params_span}"
+    );
 }

@@ -86,6 +86,24 @@ Unset defaults by `std::io::IsTerminal` on stderr (std since 1.70; the crate's `
 
 Tier-graded levels (reads at `debug`, writes at `info`, dangerous at `warn`) were considered and rejected. It would give a clean mutation-only default, but the requirement is that reads are logged by default — and reads-at-debug means the default configuration does not log them, only logging everything once an operator sets `RUST_LOG`. Uniform `info` is the honest reading. Tier remains a field, so filtering by tier is a query concern rather than a level concern.
 
+### One field per parameter, namespaced under `params.`
+
+The first implementation collapsed every logged parameter into a single `params` field holding `"user_id=abc group_id=g1"`. That renders acceptably as text but defeats the point of the format switch: in JSON the whole set is one opaque string, so filtering on `user_id` means regex-parsing a value rather than querying a key. It also emitted `params=""` on the many calls with nothing allowlisted.
+
+Each parameter is now its own field, named `params.<argument name>`. The dotted namespace matches OpenTelemetry semantic conventions and Elastic Common Schema — the two conventions most log backends are built around — and buys two things beyond convention: parameters stay visually grouped in text output, and a tool parameter can never collide with a server-side field such as `tool`, `outcome`, or `duration_ms`. The allowlist stores the argument name and its field name as a pair so the two cannot drift, with a test asserting the correspondence.
+
+Three encodings were measured before choosing:
+
+| Encoding | Text output | JSON output |
+|---|---|---|
+| Single joined field (first implementation) | `params="user_id=abc"` | `"params": "user_id=abc"` — string to parse |
+| `serde_json::Value` as one field | `params={"user_id":"abc"}` | `"params": "{\"user_id\":\"abc\"}"` — *escaped* string, worse |
+| **Dotted fields (chosen)** | `params.user_id="abc"` | `"params.user_id": "abc"` — queryable |
+
+The second option looks appealing but fails in practice: `tracing`'s JSON layer renders every field through `Display`/`Debug`, so a JSON-valued field is stringified and its quotes escaped. It cannot produce genuine nesting.
+
+Parameters are carried on a short-lived `tool_params` span rather than on the event itself. `tracing` requires field names to be compile-time constants, and events — unlike spans — have no `record` method, so a dynamically-selected set of named fields can only be attached through a span that declares every allowlisted name as `field::Empty` and fills in the ones present. Unrecorded fields are never rendered, which is also what removes the empty-`params` case. The cost is that JSON records carry the parameters under `spans[]` rather than `fields`, so the query path is `params.user_id` within the span object rather than at top level; the names themselves are identical either way.
+
 ### Structured fields, never interpolated messages
 
 Every record uses `tracing`'s field syntax (`tool = %name, tier = ?tier, duration_ms = ms`) rather than `format!`-style interpolation into the message. Interpolated messages render identically in text mode but collapse to one opaque `message` string in JSON, which would make the format switch decorative. The existing log sites already follow this style (`tracing::info!(auth_mode = "token", ...)`), so this is consistency, not a new convention.
