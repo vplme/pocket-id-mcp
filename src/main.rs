@@ -38,9 +38,6 @@ async fn main() -> ExitCode {
         .await
     {
         Ok(v) => {
-            // Pocket ID answers `{"currentVersion":"2.13.0"}`. The value is itself
-            // the literal "unknown" unless set by build-time ldflags, so a
-            // locally built instance legitimately reports that.
             tracing::info!(
                 version = v
                     .get("currentVersion")
