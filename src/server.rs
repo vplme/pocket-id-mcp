@@ -190,4 +190,102 @@ impl ServerHandler for PocketIdServer {
             self.client.base_url()
         ))
     }
+
+    /// Dispatch a tool call, logging one record per call.
+    ///
+    /// Defined by hand so that every call passes through a single observable
+    /// point; `#[tool_handler]` only generates this method when it is absent,
+    /// so `list_tools` and `get_tool` remain macro-generated. The body is the
+    /// macro's own delegation with logging around it — unknown tool names are
+    /// still reported by `ToolRouter::call`, unchanged.
+    ///
+    /// This is the only audit trail for admin mutations made through this
+    /// server: Pocket ID's audit log records sign-in events, not REST API
+    /// writes. Every call is logged, reads included.
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<CallToolResponse, McpError> {
+        let name = request.name.to_string();
+        let tier = crate::tools::tier_for(&name);
+        // Read before dispatch: the router consumes the request.
+        let params = crate::tools::loggable_params(request.arguments.as_ref());
+        let started = std::time::Instant::now();
+
+        // Each parameter is carried as its own `params.*` field rather than
+        // one encoded string, so it stays queryable in JSON output. Field
+        // names must be known at compile time and `record` only fills a field
+        // the span already declares, so every allowlisted name is declared
+        // here as `Empty`; the ones absent from this call are never rendered.
+        let span = tracing::info_span!(
+            "tool_params",
+            params.user_id = tracing::field::Empty,
+            params.client_id = tracing::field::Empty,
+            params.group_id = tracing::field::Empty,
+            params.image_type = tracing::field::Empty,
+            params.api_id = tracing::field::Empty,
+            params.provider_id = tracing::field::Empty,
+            params.token_id = tracing::field::Empty,
+            params.key_id = tracing::field::Empty,
+            params.credential_id = tracing::field::Empty,
+            params.user_ids = tracing::field::Empty,
+            params.user_group_ids = tracing::field::Empty,
+            params.oidc_client_ids = tracing::field::Empty,
+        );
+        for (field, value) in &params {
+            span.record(*field, value.as_str());
+        }
+
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        let result = self.tool_router.call(tcc).await;
+
+        // Entered *after* the await, immediately around the record below,
+        // rather than held across it: a synchronous span guard does not travel
+        // with a future resumed on another task.
+        let _entered = span.enter();
+
+        // Field names are stable so both output formats stay queryable; the
+        // tier is rendered as a string rather than Debug for the same reason.
+        let tier_field = tier.map(|t| t.as_str()).unwrap_or("unknown");
+        // `u64`, not `as_millis()`'s `u128`: `u128` has no `tracing::Value`
+        // impl, so it falls back to `Debug` and is emitted as the *string*
+        // `"6"` in JSON output rather than a number, which a collector cannot
+        // range-query. Saturating rather than wrapping on the absurd overflow.
+        let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        match &result {
+            Ok(response) => {
+                // A tool-level failure (`isError`) is an outcome, not a
+                // transport error, so it is reported separately from a
+                // protocol error. Non-`Complete` variants are unreachable for
+                // this server's tools but the enum is non-exhaustive.
+                let outcome = match response {
+                    CallToolResponse::Complete(r) if r.is_error.unwrap_or(false) => "error",
+                    CallToolResponse::Complete(_) => "ok",
+                    _ => "incomplete",
+                };
+                tracing::info!(
+                    tool = %name,
+                    tier = tier_field,
+                    outcome,
+                    duration_ms,
+                    "tool call"
+                );
+            }
+            // `ErrorData`'s message is already sanitized upstream: tool bodies
+            // build it from `ApiError`, which extracts an error message without
+            // echoing credentials. Response content is never logged.
+            Err(e) => {
+                tracing::info!(
+                    tool = %name,
+                    tier = tier_field,
+                    outcome = "failed",
+                    error = %e.message,
+                    duration_ms,
+                    "tool call"
+                );
+            }
+        }
+        result
+    }
 }
