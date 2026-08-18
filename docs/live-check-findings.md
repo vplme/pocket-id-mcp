@@ -180,7 +180,14 @@ curl -X PUT $BASE/api/scim/service-provider/$SID -H "X-API-KEY: $KEY" \
 # → 200 OK, response now shows "token":""  — the stored token is gone
 ```
 
-Fix: add `#[serde(skip_serializing_if = "Option::is_none")]` to `token`.
+Follow-up: `skip_serializing_if` alone does **not** fix this. Upstream's
+[`UpdateServiceProvider`](https://github.com/pocket-id/pocket-id/blob/22354581df545effa981918dd4dbd9162f72859e/backend/internal/service/scim_service.go)
+assigns `provider.Token = datatype.EncryptedString(input.Token)` unconditionally, and
+an *absent* JSON field binds to `""` in Go — verified live: a PUT with no `token` field
+at all also clears the stored token. The update is full-replacement by design.
+
+Fix: give the update tool a dedicated input where `token` is **required**, so callers
+must resend the current token (empty string to deliberately clear it).
 
 ### 2. Application configuration requires the full flat object (`src/tools/admin.rs`)
 
@@ -286,7 +293,8 @@ No code change needed.
 
 ## Resulting work list for this repo
 
-1. `src/tools/dto.rs` — `skip_serializing_if` on `ScimServiceProviderInput.token`.
+1. `src/dto.rs` — dedicated `ScimServiceProviderUpdateInput` with a required `token`
+   (the server overwrites the stored token unconditionally on update).
 2. `src/tools/admin.rs` — rewrite `update_application_configuration` docs (full flat
    object, not the `/all` array), optionally validate required keys client-side.
 3. `src/tools/admin.rs` — audit filters: `userId` → `userID`, document

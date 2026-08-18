@@ -108,7 +108,8 @@ pub struct DeletePasskeyParams {
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct CreateSignupTokenParams {
-    /// Token lifetime as a duration string, e.g. "1h", "24h", "7d".
+    /// Token lifetime as a Go duration string, e.g. "1h", "24h", "168h"
+    /// (= 7 days). Only ns/us/ms/s/m/h units are accepted — "7d" is rejected.
     pub ttl: String,
     /// How many signups this token allows (1–100).
     pub usage_limit: i64,
@@ -126,7 +127,8 @@ pub struct SignupTokenIdParam {
 pub struct OneTimeAccessEmailAdminParams {
     /// ID of the user to send the login email to.
     pub user_id: String,
-    /// Optional token lifetime as a duration string, e.g. "1h".
+    /// Optional token lifetime as a Go duration string, e.g. "1h", "30m".
+    /// Only ns/us/ms/s/m/h units are accepted — day units like "7d" are rejected.
     pub ttl: Option<String>,
 }
 

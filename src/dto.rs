@@ -282,6 +282,38 @@ pub struct OidcClientInput {
     pub credentials: Option<OidcClientCredentials>,
 }
 
+/// Body for updating an OIDC client. Mirrors `OidcClientInput` minus `id`:
+/// the upstream update DTO has no `id` field, and a value sent there is
+/// silently ignored (clients cannot be renamed).
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OidcClientUpdateInput {
+    /// Client display name (required, max 50 chars).
+    pub name: String,
+    pub description: Option<String>,
+    /// Public client (no secret, PKCE required).
+    pub is_public: Option<bool>,
+    pub is_group_restricted: Option<bool>,
+    pub pkce_enabled: Option<bool>,
+    pub requires_pushed_authorization_requests: Option<bool>,
+    pub requires_reauthentication: Option<bool>,
+    pub skip_consent: Option<bool>,
+    #[serde(rename = "callbackURLs")]
+    pub callback_urls: Option<Vec<String>>,
+    #[serde(rename = "logoutCallbackURLs")]
+    pub logout_callback_urls: Option<Vec<String>>,
+    #[serde(rename = "launchURL", skip_serializing_if = "Option::is_none")]
+    pub launch_url: Option<String>,
+    /// URL to fetch the light-mode logo from (server-side).
+    pub logo_url: Option<String>,
+    pub dark_logo_url: Option<String>,
+    pub has_logo: Option<bool>,
+    pub has_dark_logo: Option<bool>,
+    pub access_token_duration_minutes: Option<i64>,
+    pub refresh_token_duration_minutes: Option<i64>,
+    pub credentials: Option<OidcClientCredentials>,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcClientMetaData {
@@ -462,7 +494,24 @@ pub struct ScimServiceProviderInput {
     /// OIDC client this provider is attached to (required).
     pub oidc_client_id: String,
     /// Bearer token used to authenticate against the SCIM endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+}
+
+/// Body for updating a SCIM service provider. Unlike the create input,
+/// `token` is required: the server overwrites the stored token with whatever
+/// the request carries, and an omitted or null token silently clears it.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimServiceProviderUpdateInput {
+    /// SCIM base endpoint of the downstream provider (required).
+    pub endpoint: String,
+    /// OIDC client this provider is attached to (required).
+    pub oidc_client_id: String,
+    /// Bearer token used to authenticate against the SCIM endpoint.
+    /// Required on update: the server unconditionally stores what is sent,
+    /// so resend the current token to keep it (empty string clears it).
+    pub token: String,
 }
 
 // ---------------------------------------------------------------------------

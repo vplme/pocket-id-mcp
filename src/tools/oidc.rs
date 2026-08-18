@@ -23,7 +23,15 @@ pub struct UpdateOidcClientParams {
     /// ID of the OIDC client to update.
     pub client_id: String,
     #[serde(flatten)]
-    pub client: OidcClientInput,
+    pub client: OidcClientUpdateInput,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct CreateClientSecretParams {
+    /// OIDC client ID.
+    pub client_id: String,
+    /// Secret to set (min 16 chars). Omit to have the server generate a random one.
+    pub secret: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -363,7 +371,7 @@ impl PocketIdServer {
     }
 
     #[tool(
-        description = "Update an OIDC client by ID. Supply the full desired state; omitted optional fields are cleared or defaulted by the API."
+        description = "Update an OIDC client by ID. Supply the full desired state; omitted optional fields are cleared or defaulted by the API. Clients cannot be renamed: the client ID is fixed at creation."
     )]
     pub async fn update_oidc_client(
         &self,
@@ -401,18 +409,22 @@ impl PocketIdServer {
     }
 
     #[tool(
-        description = "Generate a new client secret for an OIDC client. The secret is shown ONLY ONCE in this response and cannot be retrieved later — store it now. The previous secret is invalidated immediately."
+        description = "Set or generate a client secret for an OIDC client. Pass `secret` (min 16 chars) to set a chosen value, or omit it to generate a random one. The secret is shown ONLY ONCE in this response and cannot be retrieved later — store it now. The previous secret is invalidated immediately."
     )]
     pub async fn create_oidc_client_secret(
         &self,
-        Parameters(p): Parameters<ClientIdParam>,
+        Parameters(p): Parameters<CreateClientSecretParams>,
     ) -> Result<Json<OidcClientSecret>, String> {
+        let body = p
+            .secret
+            .as_ref()
+            .map(|s| serde_json::json!({ "secret": s }));
         self.client
             .json(
                 Method::POST,
                 &format!("/api/oidc/clients/{}/secret", client_seg(&p.client_id)),
                 &[],
-                NO_BODY,
+                body.as_ref(),
             )
             .await
             .map(Json)
