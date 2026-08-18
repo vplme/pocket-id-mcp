@@ -88,9 +88,12 @@ pub struct DeleteImageParams {
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct UpdateAppConfigParams {
-    /// Configuration key/value pairs to send. The API expects the full
-    /// configuration document — read get_all_application_configuration first,
-    /// modify the keys you need, and send the merged result.
+    /// Complete configuration as a single flat object of camelCase keys to
+    /// string values, e.g. {"appName": "...", "sessionDuration": "60", ...}.
+    /// Every required key must be present — partial objects are rejected with
+    /// 400. Note that get_all_application_configuration returns an ARRAY of
+    /// {key, type, value} entries: convert it to a flat {key: value} object,
+    /// apply your changes, then submit. Do not send the array itself.
     pub config: serde_json::Value,
 }
 
@@ -102,7 +105,8 @@ pub struct AuditLogFilterParams {
     pub event: Option<String>,
     /// Filter by OIDC client name.
     pub client_name: Option<String>,
-    /// Filter by location (city/country).
+    /// Filter by network location: only "internal" or "external" are
+    /// recognized; any other value is silently ignored by the server.
     pub location: Option<String>,
     #[serde(flatten)]
     pub list: ListParams,
@@ -111,8 +115,10 @@ pub struct AuditLogFilterParams {
 impl AuditLogFilterParams {
     fn to_query(&self) -> Vec<(String, String)> {
         let mut q = self.list.to_query();
+        // The server matches filter keys against Go field names with only the
+        // first letter capitalized, so this must be "userID", not "userId".
         if let Some(v) = &self.user_id {
-            q.push(("filters[userId]".to_string(), v.clone()));
+            q.push(("filters[userID]".to_string(), v.clone()));
         }
         if let Some(v) = &self.event {
             q.push(("filters[event]".to_string(), v.clone()));
@@ -153,7 +159,7 @@ pub struct UpdateScimProviderParams {
     /// SCIM service provider ID.
     pub provider_id: String,
     #[serde(flatten)]
-    pub provider: ScimServiceProviderInput,
+    pub provider: ScimServiceProviderUpdateInput,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -395,7 +401,7 @@ impl PocketIdServer {
     }
 
     #[tool(
-        description = "Update the application configuration. The API expects the complete configuration document: read get_all_application_configuration first, change the keys you need, and submit the merged key/value object."
+        description = "Update the application configuration. The API expects one complete flat object of camelCase keys to string values with every required key present (partial updates are rejected). Read get_all_application_configuration first, flatten its [{key, value}] array into a {key: value} object, change what you need, and submit that object."
     )]
     pub async fn update_application_configuration(
         &self,
@@ -495,7 +501,9 @@ impl PocketIdServer {
             .map_err(err_str)
     }
 
-    #[tool(description = "Update a SCIM service provider's endpoint, client, or token.")]
+    #[tool(
+        description = "Update a SCIM service provider. This is a full replacement: the server stores exactly what is sent, so always resend the current token — a missing or empty token clears the stored one and breaks provisioning."
+    )]
     pub async fn update_scim_service_provider(
         &self,
         Parameters(p): Parameters<UpdateScimProviderParams>,

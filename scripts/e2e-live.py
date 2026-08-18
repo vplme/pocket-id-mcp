@@ -70,6 +70,8 @@ check("set_group_users", True)
 detail = structured(call("get_group", {"group_id": grp["id"]}))
 check("get_group members", any(u["id"] == bob["id"] for u in (detail.get("users") or [])))
 claims = structured(call("update_user_custom_claims", {"user_id": bob["id"], "claims": [{"key": "team", "value": "qa"}]}))
+if isinstance(claims, dict):  # array results arrive wrapped in {"result": [...]}
+    claims = claims["result"]
 check("update_user_custom_claims", any(c["key"] == "team" for c in claims))
 
 # --- oidc client ---
@@ -77,6 +79,8 @@ client = structured(call("create_oidc_client", {"name": f"e2e-app-{SUF}", "callb
 check("create_oidc_client", client["name"] == f"e2e-app-{SUF}", client["id"])
 secret = structured(call("create_oidc_client_secret", {"client_id": client["id"]}))
 check("create_oidc_client_secret", len(secret.get("secret") or "") >= 16)
+chosen = structured(call("create_oidc_client_secret", {"client_id": client["id"], "secret": f"e2e-chosen-secret-{SUF}"}))
+check("create_oidc_client_secret (chosen value)", chosen.get("secret") == f"e2e-chosen-secret-{SUF}")
 restricted = structured(call("update_oidc_client_allowed_groups", {"client_id": client["id"], "user_group_ids": [grp["id"]]}))
 check("update_oidc_client_allowed_groups", True)
 cl = structured(call("get_oidc_client", {"client_id": client["id"]}))
