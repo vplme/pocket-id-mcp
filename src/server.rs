@@ -40,7 +40,12 @@ impl PocketIdServer {
         for route in tool_router.map.values_mut() {
             let mut schema = serde_json::Value::Object((*route.attr.input_schema).clone());
             collapse_nullable_types(&mut schema);
-            if let serde_json::Value::Object(map) = schema {
+            collapse_nullable_anyof(&mut schema);
+            if let serde_json::Value::Object(mut map) = schema {
+                map.insert(
+                    "additionalProperties".to_string(),
+                    serde_json::Value::Bool(false),
+                );
                 route.attr.input_schema = Arc::new(map);
             }
         }
@@ -139,11 +144,22 @@ pub(crate) fn err_str(e: ApiError) -> String {
 fn collapse_nullable_types(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
+            let mut removed_null_type = false;
             if let Some(serde_json::Value::Array(types)) = map.get_mut("type") {
+                let before = types.len();
                 types.retain(|t| t != "null");
+                removed_null_type = types.len() != before;
                 if types.len() == 1 {
                     let only = types.remove(0);
                     map.insert("type".to_string(), only);
+                }
+            }
+            // An inlined `Option<Enum>` merges to `"type": ["string", "null"]`
+            // with a null in the value list; dropping the null branch of the
+            // type must drop it from the enum too.
+            if removed_null_type {
+                if let Some(serde_json::Value::Array(values)) = map.get_mut("enum") {
+                    values.retain(|v| !v.is_null());
                 }
             }
             for v in map.values_mut() {
@@ -153,6 +169,48 @@ fn collapse_nullable_types(value: &mut serde_json::Value) {
         serde_json::Value::Array(items) => {
             for v in items {
                 collapse_nullable_types(v);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collapse schemars' nullable anyOf wrappers (`anyOf: [X, {"type": "null"}]`,
+/// produced for `Option<Enum>` params) by merging X's keys into the parent
+/// schema object alongside existing siblings such as `description`. Same
+/// motivation as `collapse_nullable_types`: optionality is already expressed
+/// by absence from `required`, and form-rendering clients only produce typed
+/// inputs (e.g. an enum select) for a plain schema shape.
+fn collapse_nullable_anyof(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let inner = match map.get("anyOf") {
+                Some(serde_json::Value::Array(variants)) if variants.len() == 2 => {
+                    let is_null = |v: &serde_json::Value| {
+                        v.as_object()
+                            .is_some_and(|o| o.len() == 1 && o.get("type") == Some(&"null".into()))
+                    };
+                    match (is_null(&variants[0]), is_null(&variants[1])) {
+                        (false, true) => variants[0].as_object().cloned(),
+                        (true, false) => variants[1].as_object().cloned(),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            if let Some(inner) = inner {
+                map.remove("anyOf");
+                for (k, v) in inner {
+                    map.entry(k).or_insert(v);
+                }
+            }
+            for v in map.values_mut() {
+                collapse_nullable_anyof(v);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for v in items {
+                collapse_nullable_anyof(v);
             }
         }
         _ => {}

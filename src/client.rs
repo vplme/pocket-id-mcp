@@ -31,6 +31,7 @@ pub enum ApiError {
 
 /// Source for a file upload: exactly one of `file_path` or `url`.
 #[derive(Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FileSource {
     /// Absolute path to a local file to upload.
     pub file_path: Option<String>,
