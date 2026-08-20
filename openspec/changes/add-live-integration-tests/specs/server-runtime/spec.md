@@ -14,5 +14,5 @@ The test suite SHALL include an opt-in live suite that drives the built server b
 - **THEN** the suite proves Pocket ID holds it by authenticating with it (and that the superseded/revoked value no longer authenticates)
 
 #### Scenario: Hermetic default
-- **WHEN** `cargo test` runs without Docker or live configuration
-- **THEN** the live tests compile but are reported as ignored, and all other tests pass
+- **WHEN** `cargo test` runs without the live opt-in
+- **THEN** the live suite compiles but exits with a notice, and all other tests pass

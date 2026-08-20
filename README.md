@@ -336,14 +336,31 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 
 ```sh
 cargo test                                   # hermetic: unit, HTTP-auth, tier, conformance, spec-coverage tests
-cargo test --test live -- --ignored          # live: real binary over MCP against a real Pocket ID
+POCKET_ID_LIVE=1 cargo test --test live      # live: Gherkin features against a real Pocket ID
+POCKET_ID_LIVE=1 cargo test --test live -- --tags @oidc      # one area; --name "secret" for one scenario
 ```
 
-The live suite (`tests/live/`) starts a pinned Pocket ID container via Docker (`pocket-id-mcp-live`, left running afterwards for inspection), bootstraps the first admin and an API key through the one-time `/api/signup/setup` flow, then for every scenario spawns the real `pocket-id-mcp` binary over stdio, calls tools through an MCP client, and verifies the effect by reading Pocket ID back directly over REST — e.g. `create_oidc_client` must produce a client that `GET /api/oidc/clients/{id}` returns with exactly those parameters. It also pins observed upstream contracts, such as Pocket ID refusing API-key-authenticated API-key creation. Knobs:
+The live suite is written as Gherkin features (`tests/features/*.feature`, run by [cucumber-rs](https://github.com/cucumber-rs/cucumber) from `tests/live/`). It starts a pinned Pocket ID container via Docker (`pocket-id-mcp-live`, left running afterwards for inspection), bootstraps the first admin and API keys through the one-time `/api/signup/setup` flow, then for every scenario spawns the real `pocket-id-mcp` binary over stdio, drives it through an MCP client, and verifies the effect by reading Pocket ID back directly over REST — never through the server's own client. Write-only values are proven by use (a minted client secret must authenticate to `/api/oidc/introspect`; a revoked API key must stop authenticating). For example:
+
+```gherkin
+Scenario: Updating a client persists every field
+  Given a confidential OIDC client "{unique}"
+  When I update that client with:
+    | name               | {unique}-renamed               |
+    | callbackURLs       | https://new.example.com/cb     |
+    | skipConsent        | true                           |
+  Then Pocket ID's record of that client has:
+    | name               | {unique}-renamed               |
+    | callbackURLs       | https://new.example.com/cb     |
+    | skipConsent        | true                           |
+```
+
+Data-table cells are typed by the tool's advertised input schema, so a misspelled parameter fails loudly. The suite also pins observed upstream contracts, such as Pocket ID refusing API-key-authenticated API-key creation. Knobs:
 
 | Variable | Purpose |
 |---|---|
-| `POCKET_ID_LIVE_URL` + `POCKET_ID_LIVE_API_KEY` | Test against an existing instance instead of Docker (admin API key; no bootstrap, key-revocation scenario is skipped) |
+| `POCKET_ID_LIVE=1` | Opt in (the binary exits early otherwise, so plain `cargo test` stays offline) |
+| `POCKET_ID_LIVE_URL` + `POCKET_ID_LIVE_API_KEY` | Test against an existing instance instead of Docker (admin API key; `@needs-bootstrap` scenarios are skipped) |
 | `POCKET_ID_LIVE_IMAGE` | Container image (default `ghcr.io/pocket-id/pocket-id:v2.13.0`, matching the vendored spec) |
 | `POCKET_ID_LIVE_PORT` | Host port for the container (default `1431`) |
 

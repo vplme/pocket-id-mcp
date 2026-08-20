@@ -52,5 +52,5 @@ jobs:
       - name: Pull Pocket ID image
         run: docker pull ghcr.io/pocket-id/pocket-id:v2.13.0
 
-      - name: Live suite against a real Pocket ID
-        run: cargo test --test live -- --ignored
+      - name: Live suite against a real Pocket ID (cucumber features)
+        run: POCKET_ID_LIVE=1 cargo test --test live

@@ -179,20 +179,6 @@ async fn rejects_secret(w: &mut LiveWorld, secret: String) {
 
 // --- group restriction -------------------------------------------------------
 
-#[given(expr = "a user group {string}")]
-async fn given_group(w: &mut LiveWorld, name: String) {
-    let group = w
-        .mcp()
-        .call_json(
-            "create_group",
-            json!({"name": w.expand(&name), "friendlyName": "Live Group"}),
-        )
-        .await;
-    let id = str_of(&group, "id").to_string();
-    w.cleanup.push(format!("/api/user-groups/{id}"));
-    w.group_id = Some(id);
-}
-
 #[when("I restrict that client to that group")]
 async fn restrict_to_group(w: &mut LiveWorld) {
     w.mcp()

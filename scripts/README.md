@@ -6,7 +6,8 @@ account via the one-time `/api/signup/setup` call (no passkey needed), API key â
 nothing down on failure so you can inspect state.
 
 > The stdio-mode pass (users, groups, OIDC clients, images, â€¦) now lives in the Rust live
-> suite under `tests/live/` and runs in CI: `cargo test --test live -- --ignored`. See the
+> suite (Gherkin features in `tests/features/`, runner in `tests/live/`) and runs in CI:
+> `POCKET_ID_LIVE=1 cargo test --test live`. See the
 > *Development* section of the top-level README.
 
 Requirements: Docker, Python 3 with `requests`, a debug build (`cargo build`), and

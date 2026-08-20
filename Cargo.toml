@@ -54,11 +54,11 @@ rand = "0.8"
 jsonschema = { version = "0.49.9", default-features = false, features = ["resolve-file"] }
 cucumber = { version = "0.21.1", features = ["macros"] }
 
-# Cucumber spike: Gherkin features for the live suite, reusing tests/live/common.rs.
-# Opt-in via POCKET_ID_LIVE=1 (the binary exits early otherwise).
+# Live suite: Gherkin features (tests/features) driven by cucumber against a real
+# Pocket ID. Opt-in via POCKET_ID_LIVE=1 — the binary exits early otherwise.
 [[test]]
-name = "cucumber"
-path = "tests/cucumber/main.rs"
+name = "live"
+path = "tests/live/main.rs"
 harness = false
 
 [profile.release]

@@ -17,12 +17,21 @@ pub struct LiveWorld {
     pub mcp: Option<Mcp>,
     /// Advertised input schemas by tool name, for typing data-table cells.
     pub schemas: HashMap<String, Value>,
+    /// Text of the last tool-level error (steps that expect failure set it).
+    pub last_error: Option<String>,
+    /// stderr + status of a server started directly (startup scenarios).
+    pub process: Option<std::process::Output>,
     // "that ..." references
     pub client_id: Option<String>,
     pub group_id: Option<String>,
+    pub user_id: Option<String>,
     pub api_id: Option<String>,
     pub secret: Option<String>,
     pub permission_ids: HashMap<String, String>,
+    /// Application configuration as last read (flat key → value) and the
+    /// appName found there, so the configuration scenario can restore it.
+    pub app_config: Option<serde_json::Map<String, Value>>,
+    pub original_app_name: Option<Value>,
     /// REST paths deleted after the scenario (best effort).
     pub cleanup: Vec<String>,
 }
@@ -34,11 +43,16 @@ impl LiveWorld {
             unique: unique("live"),
             mcp: None,
             schemas: HashMap::new(),
+            last_error: None,
+            process: None,
             client_id: None,
             group_id: None,
+            user_id: None,
             api_id: None,
             secret: None,
             permission_ids: HashMap::new(),
+            app_config: None,
+            original_app_name: None,
             cleanup: Vec::new(),
         }
     }
@@ -82,10 +96,20 @@ impl LiveWorld {
             .as_deref()
             .expect("a group created earlier in the scenario")
     }
+    pub fn user_id(&self) -> &str {
+        self.user_id
+            .as_deref()
+            .expect("a user created earlier in the scenario")
+    }
     pub fn api_id(&self) -> &str {
         self.api_id
             .as_deref()
             .expect("an API definition created earlier in the scenario")
+    }
+    pub fn last_error(&self) -> &str {
+        self.last_error
+            .as_deref()
+            .expect("a failed tool call earlier in the scenario")
     }
 
     /// Turn a two-column data table into tool arguments, typing each cell by
@@ -129,6 +153,32 @@ impl LiveWorld {
             assert_eq!(
                 actual, &expected,
                 "field `{key}` in Pocket ID record {record}"
+            );
+        }
+    }
+
+    /// `| key | value |` rows → custom-claim inputs for the claims tools.
+    pub fn claims_from_table(&self, step: &Step) -> Vec<Value> {
+        step.table()
+            .expect("a | key | value | table")
+            .rows
+            .iter()
+            .map(|row| serde_json::json!({"key": row[0], "value": self.expand(&row[1])}))
+            .collect()
+    }
+
+    /// Assert a record's `customClaims` contains every `| key | value |` row.
+    pub fn assert_claims(&self, record: &Value, step: &Step) {
+        let claims = record["customClaims"]
+            .as_array()
+            .unwrap_or_else(|| panic!("no customClaims array in {record}"));
+        for row in &step.table().expect("a | key | value | table").rows {
+            let (key, value) = (&row[0], self.expand(&row[1]));
+            assert!(
+                claims
+                    .iter()
+                    .any(|c| c["key"] == key.as_str() && c["value"] == value.as_str()),
+                "claim {key}={value} missing in Pocket ID record: {claims:?}"
             );
         }
     }
