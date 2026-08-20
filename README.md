@@ -1,5 +1,9 @@
 # pocket-id-mcp
 
+[![CI](https://github.com/vplme/pocket-id-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/vplme/pocket-id-mcp/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vplme/pocket-id-mcp/coverage/badge.json)](https://github.com/vplme/pocket-id-mcp/actions/workflows/coverage.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An MCP (Model Context Protocol) server for [Pocket ID](https://pocket-id.org) — the self-hosted, passkey-first OIDC identity provider.
 
 It exposes the complete Pocket ID REST API (103 operations) as **84 curated MCP tools** so AI assistants like Claude can manage your instance conversationally: users, groups, OIDC clients, custom claims, passkeys, branding images, audit logs, API keys, and SCIM provisioning — with safety tiers around destructive operations.
@@ -8,7 +12,7 @@ It exposes the complete Pocket ID REST API (103 operations) as **84 curated MCP 
 - **Two transports**: stdio (default) and Streamable HTTP secured with OAuth 2.1
 - **Safety tiers**: read / write / dangerous — dangerous operations (user deletion, passkey deletion, login-token minting, API-key revocation) are invisible unless explicitly enabled
 - **Images round-trip**: upload branding images from a file or URL, and *see* the result — image GETs return real MCP image content
-- **Coverage-tested**: a CI test asserts every operation in the vendored upstream spec is either mapped to a tool or excluded with a documented reason; a weekly workflow diffs against upstream for API drift
+- **Tested against the real thing**: a CI test asserts every operation in the vendored upstream spec is either mapped to a tool or excluded with a documented reason; a live suite drives the built binary over MCP against a real Pocket ID container and verifies each mutation through Pocket ID's own REST API; a weekly workflow diffs against upstream for API drift
 
 ## Installation
 
@@ -374,6 +378,48 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 ## API coverage
 
 `spec/swagger.yaml` vendors the upstream API spec (currently Pocket ID v2.13.0). A test fails if any operation is neither mapped to a tool nor listed in `spec/exclusions.toml` with a reason (excluded: browser signup/setup flows, device-login endpoints, OIDC protocol endpoints, one-time token redemption). A weekly GitHub Actions job diffs upstream and opens a tracking issue on drift.
+
+## Development
+
+```sh
+cargo test                                   # hermetic: unit, HTTP-auth, tier, conformance, spec-coverage tests
+POCKET_ID_LIVE=1 cargo test --test live      # live: Gherkin features against a real Pocket ID
+POCKET_ID_LIVE=1 cargo test --test live -- --tags @oidc      # one area; --name "secret" for one scenario
+```
+
+The live suite is written as Gherkin features (`tests/features/*.feature`, run by [cucumber-rs](https://github.com/cucumber-rs/cucumber) from `tests/live/`). It starts a pinned Pocket ID container via Docker (`pocket-id-mcp-live`, left running afterwards for inspection), bootstraps the first admin and API keys through the one-time `/api/signup/setup` flow, then for every scenario spawns the real `pocket-id-mcp` binary over stdio, drives it through an MCP client, and verifies the effect by reading Pocket ID back directly over REST — never through the server's own client. Write-only values are proven by use (a minted client secret must authenticate to `/api/oidc/introspect`; a revoked API key must stop authenticating). For example:
+
+```gherkin
+Scenario: Updating a client persists every field
+  Given a confidential OIDC client "{unique}"
+  When I update that client with:
+    | name               | {unique}-renamed               |
+    | callbackURLs       | https://new.example.com/cb     |
+    | skipConsent        | true                           |
+  Then Pocket ID's record of that client has:
+    | name               | {unique}-renamed               |
+    | callbackURLs       | https://new.example.com/cb     |
+    | skipConsent        | true                           |
+```
+
+Data-table cells are typed by the tool's advertised input schema, so a misspelled parameter fails loudly. 34 scenarios exercise 68 of the 84 tools; the rest need infrastructure the suite does not provide (an SMTP sink, LDAP, a SCIM endpoint, a public CIMD document, a real passkey or consent flow). The suite also pins observed upstream contracts: Pocket ID refuses API-key-authenticated API-key creation/renewal, and token introspection authenticates with OAuth client credentials only, so `create_api_key`, `renew_api_key` and `introspect_token` cannot succeed under this server's API-key auth. Knobs:
+
+| Variable | Purpose |
+|---|---|
+| `POCKET_ID_LIVE=1` | Opt in (the binary exits early otherwise, so plain `cargo test` stays offline) |
+| `POCKET_ID_LIVE_URL` + `POCKET_ID_LIVE_API_KEY` | Test against an existing instance instead of Docker (admin API key; `@needs-bootstrap` scenarios are skipped) |
+| `POCKET_ID_LIVE_IMAGE` | Container image (default `ghcr.io/pocket-id/pocket-id:v2.13.0`, matching the vendored spec) |
+| `POCKET_ID_LIVE_PORT` | Host port for the container (default `1431`) |
+
+The suite runs in CI on every pull request (`live` job). `scripts/e2e-oauth.py` additionally exercises the full OAuth 2.1 + PKCE flow in HTTP mode and stays a manual driver (needs `cloudflared`).
+
+**Coverage.** The badge is line coverage of `src/` from the hermetic suites *plus* the live suite — the `pocket-id-mcp` binary the scenarios spawn is instrumented too, so tool bodies that only run against a real Pocket ID count. It is computed by the `Coverage` workflow (`cargo-llvm-cov`) and published to the `coverage` branch on every push to `main`. Locally:
+
+```sh
+cargo llvm-cov --no-report test                                # hermetic
+POCKET_ID_LIVE=1 cargo llvm-cov --no-report test --test live    # live
+cargo llvm-cov report --open                                   # HTML report (or --summary-only)
+```
 
 ## License
 

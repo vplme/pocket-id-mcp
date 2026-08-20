@@ -1,16 +1,18 @@
 # Live end-to-end test drivers
 
 Manual verification scripts that exercise `pocket-id-mcp` against a real, throwaway
-Pocket ID instance. Both bootstrap everything themselves — fresh container, first-admin
-account via the one-time `/api/signup/setup` call (no passkey needed), API key — and
-tear nothing down on failure so you can inspect state.
+Pocket ID instance. The script bootstraps everything itself — fresh container, first-admin
+account via the one-time `/api/signup/setup` call (no passkey needed), API key — and tears
+nothing down on failure so you can inspect state.
 
-Requirements: Docker, Python 3 with `requests`, a debug build (`cargo build`).
-`e2e-oauth.py` additionally needs `cloudflared` (quick tunnel; no account required).
+> The stdio-mode pass (users, groups, OIDC clients, images, …) now lives in the Rust live
+> suite (Gherkin features in `tests/features/`, runner in `tests/live/`) and runs in CI:
+> `POCKET_ID_LIVE=1 cargo test --test live`. See the
+> *Development* section of the top-level README.
 
-- **`e2e-live.py`** — stdio-mode pass: user/group CRUD, custom claims, OIDC client with
-  shown-once secret and group restriction, byte-identical application-image round-trip,
-  audit logs, versions, dangerous-tier deletion.
+Requirements: Docker, Python 3 with `requests`, a debug build (`cargo build`), and
+`cloudflared` (quick tunnel; no account required).
+
 - **`e2e-oauth.py`** — HTTP-mode pass: full OAuth 2.1 authorization-code + PKCE flow as
   an MCP client would run it (RFC 9728 metadata → OIDC discovery → consent → token),
   RFC 8707 audience-bound tokens, MCP tool calls over Streamable HTTP, wrong-audience
@@ -23,6 +25,5 @@ Run from the repository root:
 
 ```sh
 cargo build
-python3 scripts/e2e-live.py
 python3 scripts/e2e-oauth.py
 ```
