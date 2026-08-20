@@ -21,6 +21,10 @@
 - [x] 3.1 `ci.yml` `live` job (Docker, pinned image)
 - [x] 3.2 README *Development* section; `scripts/e2e-live.py` removed, `scripts/README.md` updated
 
+## 3b. Coverage
+
+- [x] 3.3 `coverage.yml`: `cargo-llvm-cov` over hermetic + live suites (spawned binary instrumented), lcov/HTML artifact, job summary, shields.io endpoint badge published to the orphan `coverage` branch on pushes to `main`; README badges (CI, coverage, license)
+
 ## 4. Verification
 
 - [x] 4.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (live binary exits with its opt-in notice)

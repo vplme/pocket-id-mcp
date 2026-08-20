@@ -1,5 +1,9 @@
 # pocket-id-mcp
 
+[![CI](https://github.com/vplme/pocket-id-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/vplme/pocket-id-mcp/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vplme/pocket-id-mcp/coverage/badge.json)](https://github.com/vplme/pocket-id-mcp/actions/workflows/coverage.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An MCP (Model Context Protocol) server for [Pocket ID](https://pocket-id.org) — the self-hosted, passkey-first OIDC identity provider.
 
 It exposes the complete Pocket ID REST API (103 operations) as **84 curated MCP tools** so AI assistants like Claude can manage your instance conversationally: users, groups, OIDC clients, custom claims, passkeys, branding images, audit logs, API keys, and SCIM provisioning — with safety tiers around destructive operations.
@@ -365,6 +369,14 @@ Data-table cells are typed by the tool's advertised input schema, so a misspelle
 | `POCKET_ID_LIVE_PORT` | Host port for the container (default `1431`) |
 
 The suite runs in CI on every pull request (`live` job). `scripts/e2e-oauth.py` additionally exercises the full OAuth 2.1 + PKCE flow in HTTP mode and stays a manual driver (needs `cloudflared`).
+
+**Coverage.** The badge is line coverage of `src/` from the hermetic suites *plus* the live suite — the `pocket-id-mcp` binary the scenarios spawn is instrumented too, so tool bodies that only run against a real Pocket ID count. It is computed by the `Coverage` workflow (`cargo-llvm-cov`) and published to the `coverage` branch on every push to `main`. Locally:
+
+```sh
+cargo llvm-cov --no-report test                                # hermetic
+POCKET_ID_LIVE=1 cargo llvm-cov --no-report test --test live    # live
+cargo llvm-cov report --open                                   # HTML report (or --summary-only)
+```
 
 ## License
 
