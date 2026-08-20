@@ -35,6 +35,7 @@ pub const BIN: &str = env!("CARGO_BIN_EXE_pocket-id-mcp");
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 
+#[derive(Debug)]
 pub struct LiveEnv {
     pub base_url: String,
     pub api_key: String,
@@ -350,6 +351,12 @@ pub struct Mcp {
     svc: RunningService<RoleClient, ()>,
 }
 
+impl std::fmt::Debug for Mcp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mcp").finish_non_exhaustive()
+    }
+}
+
 impl Mcp {
     pub async fn spawn(env: &LiveEnv, mode: Mode) -> Mcp {
         let transport = TokioChildProcess::new(server_command(&env.base_url, &env.api_key, mode))
@@ -358,11 +365,14 @@ impl Mcp {
         Mcp { svc }
     }
 
+    /// Full advertised tool definitions.
+    pub async fn tools(&self) -> Vec<rmcp::model::Tool> {
+        self.svc.list_all_tools().await.expect("tools/list")
+    }
+
     pub async fn tool_names(&self) -> BTreeSet<String> {
-        self.svc
-            .list_all_tools()
+        self.tools()
             .await
-            .expect("tools/list")
             .into_iter()
             .map(|t| t.name.to_string())
             .collect()
