@@ -41,6 +41,9 @@ mime_guess = "2"
 tempfile = "3"
 
 [dev-dependencies]
+# Client side + child-process transport for the live suite (tests/live), which
+# drives the real binary over stdio.
+rmcp = { version = "3.1.2", features = ["client", "transport-child-process"] }
 wiremock = "0.6"
 serde_yaml = "0.9"
 toml = "0.8"

@@ -8,7 +8,7 @@ It exposes the complete Pocket ID REST API (103 operations) as **84 curated MCP 
 - **Two transports**: stdio (default) and Streamable HTTP secured with OAuth 2.1
 - **Safety tiers**: read / write / dangerous — dangerous operations (user deletion, passkey deletion, login-token minting, API-key revocation) are invisible unless explicitly enabled
 - **Images round-trip**: upload branding images from a file or URL, and *see* the result — image GETs return real MCP image content
-- **Coverage-tested**: a CI test asserts every operation in the vendored upstream spec is either mapped to a tool or excluded with a documented reason; a weekly workflow diffs against upstream for API drift
+- **Tested against the real thing**: a CI test asserts every operation in the vendored upstream spec is either mapped to a tool or excluded with a documented reason; a live suite drives the built binary over MCP against a real Pocket ID container and verifies each mutation through Pocket ID's own REST API; a weekly workflow diffs against upstream for API drift
 
 ## Installation
 
@@ -331,6 +331,23 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 ## API coverage
 
 `spec/swagger.yaml` vendors the upstream API spec (currently Pocket ID v2.13.0). A test fails if any operation is neither mapped to a tool nor listed in `spec/exclusions.toml` with a reason (excluded: browser signup/setup flows, device-login endpoints, OIDC protocol endpoints, one-time token redemption). A weekly GitHub Actions job diffs upstream and opens a tracking issue on drift.
+
+## Development
+
+```sh
+cargo test                                   # hermetic: unit, HTTP-auth, tier, conformance, spec-coverage tests
+cargo test --test live -- --ignored          # live: real binary over MCP against a real Pocket ID
+```
+
+The live suite (`tests/live/`) starts a pinned Pocket ID container via Docker (`pocket-id-mcp-live`, left running afterwards for inspection), bootstraps the first admin and an API key through the one-time `/api/signup/setup` flow, then for every scenario spawns the real `pocket-id-mcp` binary over stdio, calls tools through an MCP client, and verifies the effect by reading Pocket ID back directly over REST — e.g. `create_oidc_client` must produce a client that `GET /api/oidc/clients/{id}` returns with exactly those parameters. It also pins observed upstream contracts, such as Pocket ID refusing API-key-authenticated API-key creation. Knobs:
+
+| Variable | Purpose |
+|---|---|
+| `POCKET_ID_LIVE_URL` + `POCKET_ID_LIVE_API_KEY` | Test against an existing instance instead of Docker (admin API key; no bootstrap, key-revocation scenario is skipped) |
+| `POCKET_ID_LIVE_IMAGE` | Container image (default `ghcr.io/pocket-id/pocket-id:v2.13.0`, matching the vendored spec) |
+| `POCKET_ID_LIVE_PORT` | Host port for the container (default `1431`) |
+
+The suite runs in CI on every pull request (`live` job). `scripts/e2e-oauth.py` additionally exercises the full OAuth 2.1 + PKCE flow in HTTP mode and stays a manual driver (needs `cloudflared`).
 
 ## License
 

@@ -34,3 +34,23 @@ jobs:
 
       - name: Test (includes spec coverage accounting)
         run: cargo test
+
+  live:
+    name: Live integration (Pocket ID in Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Pinned to the Pocket ID release the vendored spec describes (see
+      # tests/live/common.rs); the weekly spec-drift workflow tracks upstream.
+      - name: Pull Pocket ID image
+        run: docker pull ghcr.io/pocket-id/pocket-id:v2.13.0
+
+      - name: Live suite against a real Pocket ID
+        run: cargo test --test live -- --ignored
