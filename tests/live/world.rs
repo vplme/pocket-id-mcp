@@ -21,13 +21,23 @@ pub struct LiveWorld {
     pub last_error: Option<String>,
     /// stderr + status of a server started directly (startup scenarios).
     pub process: Option<std::process::Output>,
-    // "that ..." references
+    // "that ..." references (ids and the names they were created with)
     pub client_id: Option<String>,
+    pub client_name: Option<String>,
     pub group_id: Option<String>,
+    pub group_name: Option<String>,
     pub user_id: Option<String>,
+    pub user_name: Option<String>,
     pub api_id: Option<String>,
+    pub api_name: Option<String>,
     pub secret: Option<String>,
     pub permission_ids: HashMap<String, String>,
+    pub signup_token_id: Option<String>,
+    pub one_time_token: Option<String>,
+    /// Profile-picture bytes before an upload, to prove change and reset.
+    pub picture_before: Option<Vec<u8>>,
+    /// Current user's record before a me-update, to restore it.
+    pub me_before: Option<Value>,
     /// Application configuration as last read (flat key → value) and the
     /// appName found there, so the configuration scenario can restore it.
     pub app_config: Option<serde_json::Map<String, Value>>,
@@ -46,11 +56,19 @@ impl LiveWorld {
             last_error: None,
             process: None,
             client_id: None,
+            client_name: None,
             group_id: None,
+            group_name: None,
             user_id: None,
+            user_name: None,
             api_id: None,
+            api_name: None,
             secret: None,
             permission_ids: HashMap::new(),
+            signup_token_id: None,
+            one_time_token: None,
+            picture_before: None,
+            me_before: None,
             app_config: None,
             original_app_name: None,
             cleanup: Vec::new(),

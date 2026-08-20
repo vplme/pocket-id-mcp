@@ -20,6 +20,8 @@ Feature: Admin tools
     And a spare API key minted at bootstrap
     Then the spare API key appears in the tool's API key list
     And Pocket ID accepts the spare API key as a credential
+    When I try to renew the spare API key
+    Then the tool fails with status 403 and "not allowed"
     When I revoke the spare API key
     Then Pocket ID rejects the spare API key as a credential
     And Pocket ID no longer lists the spare API key
@@ -28,18 +30,31 @@ Feature: Admin tools
     Given an MCP server with default tiers
     When I upload "logo.png" as the dark-mode logo
     Then Pocket ID serves the dark-mode logo as image/png with exactly the bytes of "logo.png"
-    And the get_application_image tool returns the dark-mode logo with exactly the bytes of "logo.png"
+    And get_application_image returns the dark-mode logo with exactly the bytes of "logo.png"
+
+  Scenario: A background image can be set and removed again
+    Given an MCP server with default tiers
+    When I upload "logo.png" as the background image
+    Then Pocket ID serves the background image as image/png with exactly the bytes of "logo.png"
+    And get_application_image returns the background image with exactly the bytes of "logo.png"
+    When I delete the background image
+    Then Pocket ID has no background image
 
   Scenario: Application configuration changes persist and can be restored
     Given an MCP server with default tiers
     When I change the application name to "{unique}"
     Then Pocket ID's public configuration has appName "{unique}"
+    And get_public_application_configuration reports appName "{unique}"
     When I restore the original application name
     Then Pocket ID's public configuration has the original appName
 
   Scenario: Status tools report the real instance
     Given a read-only MCP server
     Then get_current_version reports Pocket ID's own version
+    And get_latest_version reports a version
     And health_check succeeds
-    And list_all_audit_logs returns a page
+    And list_all_audit_logs returns an audit-log page
+    And list_my_audit_logs returns an audit-log page
+    And list_audit_log_users maps user ids to usernames
+    And list_audit_log_client_names returns a list
     And list_users finds the user that get_current_user reports

@@ -18,6 +18,7 @@ async fn create_group(w: &mut LiveWorld, name: &str, friendly_name: &str) {
     let id = str_of(&group, "id").to_string();
     w.cleanup.push(format!("/api/user-groups/{id}"));
     w.group_id = Some(id);
+    w.group_name = Some(name.to_string());
 }
 
 #[when(expr = "I create a user group {string} with friendly name {string}")]
@@ -32,31 +33,13 @@ async fn given_group(w: &mut LiveWorld, name: String) {
     create_group(w, &name, "Live Group").await;
 }
 
-#[then("Pocket ID's record of that group has:")]
-async fn group_record_has(w: &mut LiveWorld, step: &Step) {
-    let stored = w
-        .env
-        .get_ok(&format!("/api/user-groups/{}", w.group_id()))
-        .await;
-    w.assert_table_matches(&stored, step);
-}
-
-#[then(expr = "that group appears when Pocket ID lists groups matching {string}")]
-async fn group_listed(w: &mut LiveWorld, search: String) {
-    let listed = w
-        .env
-        .get_ok(&format!("/api/user-groups?search={}", w.expand(&search)))
-        .await;
-    assert!(
-        has_id(&listed, w.group_id()),
-        "groups listed by Pocket ID: {listed}"
-    );
-}
-
 #[when("I update that group with:")]
 async fn update_group(w: &mut LiveWorld, step: &Step) {
     let mut args = w.args_from_table("update_group", step);
     args.insert("group_id".into(), Value::String(w.group_id().to_string()));
+    if let Some(Value::String(name)) = args.get("name") {
+        w.group_name = Some(name.clone());
+    }
     w.mcp().call("update_group", Value::Object(args)).await;
 }
 
@@ -89,6 +72,7 @@ async fn no_members(w: &mut LiveWorld) {
         .get_ok(&format!("/api/user-groups/{}", w.group_id()))
         .await;
     assert_eq!(stored["users"], json!([]), "members: {}", stored["users"]);
+    assert!(!has_id(&stored["users"], w.user_id()));
 }
 
 // --- custom claims -----------------------------------------------------------
@@ -120,13 +104,4 @@ async fn delete_group(w: &mut LiveWorld) {
     w.mcp()
         .call("delete_group", json!({"group_id": w.group_id()}))
         .await;
-}
-
-#[then("Pocket ID no longer has that group")]
-async fn group_gone(w: &mut LiveWorld) {
-    let (status, body) = w
-        .env
-        .get(&format!("/api/user-groups/{}", w.group_id()))
-        .await;
-    assert_eq!(status, 404, "group still present after delete: {body}");
 }

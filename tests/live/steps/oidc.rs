@@ -1,11 +1,12 @@
 //! OIDC client steps. `When`/`Given` act through tools; `Then` reads Pocket
 //! ID back over REST (or proves a write-only value by using it).
 
+use base64::Engine;
 use cucumber::gherkin::Step;
 use cucumber::{given, then, when};
 use serde_json::{Value, json};
 
-use crate::common::{has_id, str_of};
+use crate::common::{fixture, has_id, str_of, text_of};
 use crate::world::LiveWorld;
 
 // --- creating clients ------------------------------------------------------
@@ -27,6 +28,7 @@ async fn create_client(w: &mut LiveWorld, name: &str, public: bool, pkce: bool, 
     let id = str_of(&created, "id").to_string();
     w.cleanup.push(format!("/api/oidc/clients/{id}"));
     w.client_id = Some(id);
+    w.client_name = Some(name.to_string());
 }
 
 #[when(expr = "I create a confidential OIDC client {string} with PKCE and callback {string}")]
@@ -59,15 +61,54 @@ async fn pocket_id_has_client(w: &mut LiveWorld, name: String, callback: String)
     assert_eq!(stored["callbackURLs"], json!([callback]));
 }
 
-#[then(expr = "that client appears when Pocket ID lists clients matching {string}")]
-async fn client_listed(w: &mut LiveWorld, search: String) {
-    let listed = w
+#[then("get_oidc_client_metadata for that client reports its name and type")]
+async fn metadata_reports(w: &mut LiveWorld) {
+    let meta = w
+        .mcp()
+        .call_json(
+            "get_oidc_client_metadata",
+            json!({"client_id": w.client_id()}),
+        )
+        .await;
+    let record = w
         .env
-        .get_ok(&format!("/api/oidc/clients?search={}", w.expand(&search)))
+        .get_ok(&format!("/api/oidc/clients/{}/meta", w.client_id()))
+        .await;
+    assert_eq!(meta["id"], record["id"]);
+    assert_eq!(meta["name"], record["name"]);
+    assert_eq!(meta["clientType"], record["clientType"]);
+    assert_eq!(meta["name"], w.client_name.as_deref().unwrap());
+}
+
+#[then("list_my_accessible_clients lists that client")]
+async fn accessible_lists_client(w: &mut LiveWorld) {
+    let listed = w
+        .mcp()
+        .call_json("list_my_accessible_clients", json!({"limit": 100}))
         .await;
     assert!(
         has_id(&listed, w.client_id()),
-        "clients listed by Pocket ID: {listed}"
+        "accessible clients: {listed}"
+    );
+}
+
+#[then(
+    expr = "preview_oidc_client_for_user for that client and that user reports the user's claims"
+)]
+async fn preview_reports_claims(w: &mut LiveWorld) {
+    let preview = w
+        .mcp()
+        .call_json(
+            "preview_oidc_client_for_user",
+            json!({"client_id": w.client_id(), "user_id": w.user_id(), "scopes": "openid profile email"}),
+        )
+        .await;
+    let text = preview.to_string();
+    let record = w.env.get_ok(&format!("/api/users/{}", w.user_id())).await;
+    let email = str_of(&record, "email");
+    assert!(
+        text.contains(w.user_id()) || text.contains(email),
+        "preview does not mention the user ({email}): {preview}"
     );
 }
 
@@ -80,15 +121,6 @@ async fn update_client(w: &mut LiveWorld, step: &Step) {
     w.mcp()
         .call("update_oidc_client", Value::Object(args))
         .await;
-}
-
-#[then("Pocket ID's record of that client has:")]
-async fn client_record_has(w: &mut LiveWorld, step: &Step) {
-    let stored = w
-        .env
-        .get_ok(&format!("/api/oidc/clients/{}", w.client_id()))
-        .await;
-    w.assert_table_matches(&stored, step);
 }
 
 // --- secrets -----------------------------------------------------------------
@@ -177,6 +209,15 @@ async fn rejects_secret(w: &mut LiveWorld, secret: String) {
     );
 }
 
+#[when(expr = "I introspect the token {string} through the tool")]
+async fn introspect_via_tool(w: &mut LiveWorld, token: String) {
+    w.last_error = Some(
+        w.mcp()
+            .call_err("introspect_token", json!({"token": token}))
+            .await,
+    );
+}
+
 // --- group restriction -------------------------------------------------------
 
 #[when("I restrict that client to that group")]
@@ -221,6 +262,88 @@ async fn no_groups_allowed(w: &mut LiveWorld) {
     assert_eq!(stored["allowedUserGroups"], json!([]));
 }
 
+#[when("I allow that group to use that client")]
+async fn allow_group_client(w: &mut LiveWorld) {
+    w.mcp()
+        .call(
+            "set_group_allowed_oidc_clients",
+            json!({"group_id": w.group_id(), "oidc_client_ids": [w.client_id()]}),
+        )
+        .await;
+}
+
+#[then("Pocket ID's record of that group lists that client as allowed")]
+async fn group_lists_client(w: &mut LiveWorld) {
+    let stored = w
+        .env
+        .get_ok(&format!("/api/user-groups/{}", w.group_id()))
+        .await;
+    assert!(
+        has_id(&stored["allowedOidcClients"], w.client_id()),
+        "allowed clients on group: {}",
+        stored["allowedOidcClients"]
+    );
+}
+
+// --- logo --------------------------------------------------------------------
+
+#[when(expr = "I upload {string} as that client's logo")]
+async fn upload_client_logo(w: &mut LiveWorld, file: String) {
+    let path = fixture(&file);
+    w.mcp()
+        .call(
+            "update_oidc_client_logo",
+            json!({"client_id": w.client_id(), "file_path": path.to_str().unwrap()}),
+        )
+        .await;
+}
+
+#[then(expr = "Pocket ID serves that client's logo with exactly the bytes of {string}")]
+async fn client_logo_served(w: &mut LiveWorld, file: String) {
+    let expected = std::fs::read(fixture(&file)).expect("fixture");
+    let (status, content_type, bytes) = w
+        .env
+        .get_bytes(&format!("/api/oidc/clients/{}/logo", w.client_id()))
+        .await;
+    assert!(status.is_success(), "GET client logo -> {status}");
+    assert!(
+        content_type.starts_with("image/png"),
+        "content type {content_type}"
+    );
+    assert_eq!(
+        bytes, expected,
+        "Pocket ID serves exactly the uploaded bytes"
+    );
+}
+
+#[then(expr = "get_oidc_client_logo returns that client's logo with exactly the bytes of {string}")]
+async fn client_logo_via_tool(w: &mut LiveWorld, file: String) {
+    let expected = std::fs::read(fixture(&file)).expect("fixture");
+    let result = w
+        .mcp()
+        .call("get_oidc_client_logo", json!({"client_id": w.client_id()}))
+        .await;
+    let image = result
+        .content
+        .iter()
+        .find_map(|c| c.as_image())
+        .unwrap_or_else(|| panic!("no image block in {}", text_of(&result)));
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(&image.data)
+        .expect("base64 image data");
+    assert_eq!(decoded, expected);
+}
+
+#[when("I delete that client's logo")]
+async fn delete_client_logo(w: &mut LiveWorld) {
+    w.mcp()
+        .call(
+            "delete_oidc_client_logo",
+            json!({"client_id": w.client_id()}),
+        )
+        .await;
+}
+
 // --- deletion ----------------------------------------------------------------
 
 #[when("I delete that client")]
@@ -230,29 +353,22 @@ async fn delete_client(w: &mut LiveWorld) {
         .await;
 }
 
-#[then("Pocket ID no longer has that client")]
-async fn client_gone(w: &mut LiveWorld) {
-    let (status, body) = w
-        .env
-        .get(&format!("/api/oidc/clients/{}", w.client_id()))
-        .await;
-    assert_eq!(status, 404, "client still present after delete: {body}");
-}
-
 // --- API definitions and access ---------------------------------------------
 
 #[given(expr = "an API definition {string} for resource {string}")]
 async fn given_api_definition(w: &mut LiveWorld, name: String, resource: String) {
+    let name = w.expand(&name);
     let api = w
         .mcp()
         .call_json(
             "create_api_definition",
-            json!({"name": w.expand(&name), "resource": w.expand(&resource)}),
+            json!({"name": name, "resource": w.expand(&resource)}),
         )
         .await;
     let id = str_of(&api, "id").to_string();
     w.cleanup.push(format!("/api/apis/{id}"));
     w.api_id = Some(id);
+    w.api_name = Some(name);
 }
 
 #[when("I set that API definition's permissions to:")]
@@ -318,4 +434,43 @@ async fn access_delegates(w: &mut LiveWorld, key: String) {
         json!([w.permission_ids[&key]])
     );
     assert_eq!(access["clientPermissionIds"], json!([]));
+}
+
+#[then("get_client_api_access for that client agrees with Pocket ID")]
+async fn client_access_agrees(w: &mut LiveWorld) {
+    let reported = w
+        .mcp()
+        .call_json("get_client_api_access", json!({"client_id": w.client_id()}))
+        .await;
+    let access = w
+        .env
+        .get_ok(&format!("/api/api-access/{}", w.client_id()))
+        .await;
+    assert_eq!(
+        reported["userDelegatedPermissionIds"],
+        access["userDelegatedPermissionIds"]
+    );
+    assert_eq!(
+        reported["clientPermissionIds"],
+        access["clientPermissionIds"]
+    );
+}
+
+#[when(expr = "I rename that API definition to {string}")]
+async fn rename_api(w: &mut LiveWorld, name: String) {
+    let name = w.expand(&name);
+    w.mcp()
+        .call(
+            "update_api_definition",
+            json!({"api_id": w.api_id(), "name": name}),
+        )
+        .await;
+    w.api_name = Some(name);
+}
+
+#[when("I delete that API definition")]
+async fn delete_api(w: &mut LiveWorld) {
+    w.mcp()
+        .call("delete_api_definition", json!({"api_id": w.api_id()}))
+        .await;
 }

@@ -9,11 +9,12 @@
 
 ## 2. Scenarios
 
-- [x] 2.1 `oidc_clients.feature` + `steps/oidc.rs`: create visible via REST, update persists, secret usable via introspection + rotation, allowed groups, delete → 404, API definition + client access
-- [x] 2.2 `users.feature` + `steps/users.rs`: create, update, group membership, custom claims, dangerous-tier delete
-- [x] 2.3 `groups.feature` + `steps/groups.rs`: create, update, members (set + clear), custom claims, delete
-- [x] 2.4 `admin.feature` + `steps/admin.rs`: API-key contract (creation refused, revocation works), image byte round-trip, application configuration, status tools
+- [x] 2.1 `oidc_clients.feature` + `steps/oidc.rs`: create visible via REST (+ get/list/metadata/accessible read-backs), update persists, secret usable via introspection + rotation, `introspect_token` contract pin, preview for a user, allowed groups both ways, logo round-trip + removal, delete → 404, API definition permissions + client access (+ read-backs), API definition rename/delete
+- [x] 2.2 `users.feature` + `steps/users.rs`: create (+ get/list/passkeys read-backs), update, group membership (+ `list_user_groups_of_user`), custom claims (+ suggestions), profile picture replace/reset, me-tools (update, picture), dangerous-tier delete, one-time access token redeemed once, signup tokens create/list/delete
+- [x] 2.3 `groups.feature` + `steps/groups.rs`: create (+ get/list read-backs), update, members (set + clear), custom claims, delete
+- [x] 2.4 `admin.feature` + `steps/admin.rs`: API-key contract (creation + renewal refused, revocation works), logo and background image round-trips (+ removal), application configuration (+ public read-back), status tools (versions, health, audit pages/filters)
 - [x] 2.5 `server.feature` + `steps/server.rs`: read-only gating over the wire, upstream error mapping, startup validation (bad key, unreachable)
+- [x] 2.6 `steps/readback.rs`: subject-generic steps (`{subject}` = client | user | group | API definition) — record has table, still/no longer has, listed by search, read tool agrees with Pocket ID, list tool lists it
 
 ## 3. CI and docs
 
@@ -23,5 +24,5 @@
 ## 4. Verification
 
 - [x] 4.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (live binary exits with its opt-in notice)
-- [x] 4.2 `POCKET_ID_LIVE=1 cargo test --test live` green against `v2.13.0` (25 scenarios / 120 steps)
+- [x] 4.2 `POCKET_ID_LIVE=1 cargo test --test live` green against `v2.13.0` (34 scenarios / 199 steps; 68 of 84 tools exercised — the rest need SMTP/LDAP/SCIM/CIMD/passkey infrastructure)
 - [x] 4.3 Negative check: a deliberately broken tool makes the corresponding live test fail with a clear message

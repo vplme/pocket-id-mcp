@@ -355,7 +355,7 @@ Scenario: Updating a client persists every field
     | skipConsent        | true                           |
 ```
 
-Data-table cells are typed by the tool's advertised input schema, so a misspelled parameter fails loudly. The suite also pins observed upstream contracts, such as Pocket ID refusing API-key-authenticated API-key creation. Knobs:
+Data-table cells are typed by the tool's advertised input schema, so a misspelled parameter fails loudly. 34 scenarios exercise 68 of the 84 tools; the rest need infrastructure the suite does not provide (an SMTP sink, LDAP, a SCIM endpoint, a public CIMD document, a real passkey or consent flow). The suite also pins observed upstream contracts: Pocket ID refuses API-key-authenticated API-key creation/renewal, and token introspection authenticates with OAuth client credentials only, so `create_api_key`, `renew_api_key` and `introspect_token` cannot succeed under this server's API-key auth. Knobs:
 
 | Variable | Purpose |
 |---|---|

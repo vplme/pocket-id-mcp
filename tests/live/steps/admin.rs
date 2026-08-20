@@ -1,8 +1,10 @@
 //! Admin steps: API keys, branding images, application configuration, and
 //! read-only status tools.
 
+use std::str::FromStr;
+
 use base64::Engine;
-use cucumber::{given, then, when};
+use cucumber::{Parameter, given, then, when};
 use reqwest::Method;
 use serde_json::{Value, json};
 
@@ -65,6 +67,16 @@ async fn spare_accepted(w: &mut LiveWorld) {
     assert_eq!(spare_key_status(w).await, 200, "spare key rejected");
 }
 
+#[when("I try to renew the spare API key")]
+async fn try_renew_spare(w: &mut LiveWorld) {
+    let id = w.env.spare_api_key.as_ref().unwrap().id.clone();
+    w.last_error = Some(
+        w.mcp()
+            .call_err("renew_api_key", json!({"key_id": id}))
+            .await,
+    );
+}
+
 #[when("I revoke the spare API key")]
 async fn revoke_spare(w: &mut LiveWorld) {
     let id = w.env.spare_api_key.as_ref().unwrap().id.clone();
@@ -86,29 +98,63 @@ async fn spare_unlisted(w: &mut LiveWorld) {
     );
 }
 
-// --- images ------------------------------------------------------------------
+// --- application images ------------------------------------------------------
 
-#[when(expr = "I upload {string} as the dark-mode logo")]
-async fn upload_dark_logo(w: &mut LiveWorld, file: String) {
-    let path = fixture(&file);
-    w.mcp()
-        .call(
-            "update_application_image",
-            json!({"image_type": "logo", "light": false, "file_path": path.to_str().unwrap()}),
-        )
-        .await;
+/// Which branding image a step talks about.
+#[derive(Debug, Clone, Copy, Parameter)]
+#[param(
+    name = "appimage",
+    regex = "dark-mode logo|light-mode logo|background image"
+)]
+pub enum AppImage {
+    DarkLogo,
+    LightLogo,
+    Background,
 }
 
-#[then(
-    expr = "Pocket ID serves the dark-mode logo as image\\/png with exactly the bytes of {string}"
-)]
-async fn logo_served(w: &mut LiveWorld, file: String) {
+impl FromStr for AppImage {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "dark-mode logo" => AppImage::DarkLogo,
+            "light-mode logo" => AppImage::LightLogo,
+            "background image" => AppImage::Background,
+            other => return Err(format!("unknown image {other}")),
+        })
+    }
+}
+
+impl AppImage {
+    /// Tool arguments selecting this image (`image_type` + `light`).
+    fn args(self) -> Value {
+        match self {
+            AppImage::DarkLogo => json!({"image_type": "logo", "light": false}),
+            AppImage::LightLogo => json!({"image_type": "logo", "light": true}),
+            AppImage::Background => json!({"image_type": "background"}),
+        }
+    }
+    fn path(self) -> &'static str {
+        match self {
+            AppImage::DarkLogo => "/api/application-images/logo?light=false",
+            AppImage::LightLogo => "/api/application-images/logo?light=true",
+            AppImage::Background => "/api/application-images/background",
+        }
+    }
+}
+
+#[when(expr = "I upload {string} as the {appimage}")]
+async fn upload_image(w: &mut LiveWorld, file: String, image: AppImage) {
+    let path = fixture(&file);
+    let mut args = image.args();
+    args["file_path"] = json!(path.to_str().unwrap());
+    w.mcp().call("update_application_image", args).await;
+}
+
+#[then(expr = "Pocket ID serves the {appimage} as image\\/png with exactly the bytes of {string}")]
+async fn image_served(w: &mut LiveWorld, image: AppImage, file: String) {
     let expected = std::fs::read(fixture(&file)).expect("fixture");
-    let (status, content_type, bytes) = w
-        .env
-        .get_bytes("/api/application-images/logo?light=false")
-        .await;
-    assert!(status.is_success(), "GET logo -> {status}");
+    let (status, content_type, bytes) = w.env.get_bytes(image.path()).await;
+    assert!(status.is_success(), "GET {image:?} -> {status}");
     assert!(
         content_type.starts_with("image/png"),
         "content type {content_type}"
@@ -119,28 +165,33 @@ async fn logo_served(w: &mut LiveWorld, file: String) {
     );
 }
 
-#[then(
-    expr = "the get_application_image tool returns the dark-mode logo with exactly the bytes of {string}"
-)]
-async fn logo_via_tool(w: &mut LiveWorld, file: String) {
+#[then(expr = "get_application_image returns the {appimage} with exactly the bytes of {string}")]
+async fn image_via_tool(w: &mut LiveWorld, image: AppImage, file: String) {
     let expected = std::fs::read(fixture(&file)).expect("fixture");
-    let result = w
-        .mcp()
-        .call(
-            "get_application_image",
-            json!({"image_type": "logo", "light": false}),
-        )
-        .await;
-    let image = result
+    let result = w.mcp().call("get_application_image", image.args()).await;
+    let block = result
         .content
         .iter()
         .find_map(|c| c.as_image())
         .unwrap_or_else(|| panic!("no image block in {}", text_of(&result)));
-    assert_eq!(image.mime_type, "image/png");
+    assert_eq!(block.mime_type, "image/png");
     let decoded = base64::engine::general_purpose::STANDARD
-        .decode(&image.data)
+        .decode(&block.data)
         .expect("base64 image data");
     assert_eq!(decoded, expected);
+}
+
+#[when(expr = "I delete the {appimage}")]
+async fn delete_image(w: &mut LiveWorld, image: AppImage) {
+    let mut args = image.args();
+    args.as_object_mut().unwrap().remove("light");
+    w.mcp().call("delete_application_image", args).await;
+}
+
+#[then(expr = "Pocket ID has no {appimage}")]
+async fn no_image(w: &mut LiveWorld, image: AppImage) {
+    let (status, _, _) = w.env.get_bytes(image.path()).await;
+    assert_eq!(status, 404, "{image:?} still served");
 }
 
 // --- application configuration ----------------------------------------------
@@ -206,6 +257,19 @@ async fn public_app_name(w: &mut LiveWorld, name: String) {
     );
 }
 
+#[then(expr = "get_public_application_configuration reports appName {string}")]
+async fn tool_public_app_name(w: &mut LiveWorld, name: String) {
+    let public = w
+        .mcp()
+        .call_json("get_public_application_configuration", Value::Null)
+        .await;
+    assert_eq!(
+        config_value(&public["result"], "appName"),
+        Some(&json!(w.expand(&name))),
+        "public configuration via tool: {public}"
+    );
+}
+
 #[then("Pocket ID's public configuration has the original appName")]
 async fn public_app_name_original(w: &mut LiveWorld) {
     let public = w.env.get_ok("/api/application-configuration").await;
@@ -228,20 +292,49 @@ async fn version_matches(w: &mut LiveWorld) {
     }
 }
 
+#[then("get_latest_version reports a version")]
+async fn latest_version(w: &mut LiveWorld) {
+    let latest = w.mcp().call_json("get_latest_version", Value::Null).await;
+    let v = str_of(&latest["result"], "latestVersion");
+    assert!(
+        v.starts_with(|c: char| c.is_ascii_digit()),
+        "latest version: {v}"
+    );
+}
+
 #[then("health_check succeeds")]
 async fn health_ok(w: &mut LiveWorld) {
     let health = w.mcp().call("health_check", Value::Null).await;
     assert!(!text_of(&health).is_empty());
 }
 
-#[then("list_all_audit_logs returns a page")]
-async fn audit_page(w: &mut LiveWorld) {
-    let logs = w
+#[then(expr = "{word} returns an audit-log page")]
+async fn audit_page(w: &mut LiveWorld, tool: String) {
+    let logs = w.mcp().call_json(&tool, json!({"limit": 5})).await;
+    assert!(logs["data"].is_array(), "{tool}: {logs}");
+    assert!(logs["pagination"].is_object(), "{tool}: {logs}");
+}
+
+#[then("list_audit_log_users maps user ids to usernames")]
+async fn audit_users(w: &mut LiveWorld) {
+    let users = w.mcp().call_json("list_audit_log_users", Value::Null).await;
+    let map = users["result"]
+        .as_object()
+        .unwrap_or_else(|| panic!("list_audit_log_users: {users}"));
+    let upstream = w.env.get_ok("/api/audit-logs/filters/users").await;
+    assert_eq!(Value::Object(map.clone()), upstream);
+}
+
+#[then("list_audit_log_client_names returns a list")]
+async fn audit_client_names(w: &mut LiveWorld) {
+    let names = w
         .mcp()
-        .call_json("list_all_audit_logs", json!({"limit": 5}))
+        .call_json("list_audit_log_client_names", Value::Null)
         .await;
-    assert!(logs["data"].is_array(), "audit log page: {logs}");
-    assert!(logs["pagination"].is_object(), "audit log page: {logs}");
+    assert!(
+        names["result"].is_array(),
+        "list_audit_log_client_names: {names}"
+    );
 }
 
 #[then("list_users finds the user that get_current_user reports")]

@@ -29,4 +29,4 @@ None.
 - `Cargo.toml`: dev-dependency features/additions, `[[test]] live` with `harness = false`.
 - `.github/workflows/ci.yml`: `live` job.
 - `README.md`, `scripts/README.md`: docs; `scripts/e2e-live.py`: deleted.
-- Findings surfaced (not fixed here): Pocket ID 2.14 secret endpoint change; `create_api_key`/`renew_api_key` cannot succeed under API-key auth (upstream 403 `api_key_auth_not_allowed`).
+- Findings surfaced (not fixed here): Pocket ID 2.14 secret endpoint change; `create_api_key`/`renew_api_key` cannot succeed under API-key auth (upstream 403 `api_key_auth_not_allowed`); `introspect_token` cannot succeed either (introspection authenticates with OAuth client credentials, 401 under API key). Coverage: 68 of 84 tools; the remaining 16 need an SMTP sink, LDAP, a SCIM endpoint, a public CIMD document, or a real passkey/consent flow.

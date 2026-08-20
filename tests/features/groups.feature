@@ -11,7 +11,9 @@ Feature: User-group tools
     Then Pocket ID's record of that group has:
       | name         | {unique}   |
       | friendlyName | Live Group |
-    And that group appears when Pocket ID lists groups matching "{unique}"
+    And Pocket ID lists that group when searching for "{unique}"
+    And "get_group" for that group agrees with Pocket ID
+    And "list_groups" lists that group
 
   Scenario: Updating a group persists
     Given a user group "{unique}"

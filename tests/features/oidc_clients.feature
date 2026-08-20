@@ -10,7 +10,11 @@ Feature: OIDC client tools
   Scenario: Creating a client through the tool stores it in Pocket ID
     When I create a confidential OIDC client "{unique}" with PKCE and callback "https://app.example.com/callback"
     Then Pocket ID has an OIDC client "{unique}" with PKCE enabled and callback "https://app.example.com/callback"
-    And that client appears when Pocket ID lists clients matching "{unique}"
+    And Pocket ID lists that client when searching for "{unique}"
+    And "get_oidc_client" for that client agrees with Pocket ID
+    And "list_oidc_clients" lists that client
+    And get_oidc_client_metadata for that client reports its name and type
+    And list_my_accessible_clients lists that client
 
   Scenario: Updating a client persists every field
     Given a confidential OIDC client "{unique}"
@@ -36,6 +40,19 @@ Feature: OIDC client tools
     Then Pocket ID accepts the new secret as that client's credential
     But Pocket ID rejects "{unique}-chosen-secret" as that client's credential
 
+  # Pocket ID's introspection endpoint authenticates with OAuth client
+  # credentials, not with an API key, so the introspect_token tool cannot
+  # succeed in this server's auth model. Pinned so the tool surface can be
+  # documented accurately; if this starts passing, revisit the tool.
+  Scenario: introspect_token is refused under API-key authentication
+    When I introspect the token "not-a-real-token" through the tool
+    Then the tool fails with status 401 and "unauthorized"
+
+  Scenario: Previewing a client for a user reports that user's claims
+    Given a confidential OIDC client "{unique}"
+    And a user "{unique}-viewer"
+    Then preview_oidc_client_for_user for that client and that user reports the user's claims
+
   Scenario: Restricting a client to a group is visible in Pocket ID
     Given a confidential OIDC client "{unique}"
     And a user group "{unique}-allowed"
@@ -43,6 +60,19 @@ Feature: OIDC client tools
     Then Pocket ID's record of that client lists that group as allowed
     When I lift the group restriction on that client
     Then Pocket ID's record of that client lists no allowed groups
+    When I allow that group to use that client
+    Then Pocket ID's record of that group lists that client as allowed
+
+  Scenario: A client logo round-trips byte for byte and can be removed
+    Given a confidential OIDC client "{unique}"
+    When I upload "logo.png" as that client's logo
+    Then Pocket ID serves that client's logo with exactly the bytes of "logo.png"
+    And get_oidc_client_logo returns that client's logo with exactly the bytes of "logo.png"
+    And Pocket ID's record of that client has:
+      | hasLogo | true |
+    When I delete that client's logo
+    Then Pocket ID's record of that client has:
+      | hasLogo | false |
 
   Scenario: Deleting a client removes it from Pocket ID
     Given a confidential OIDC client "{unique}"
@@ -57,3 +87,14 @@ Feature: OIDC client tools
     And I grant that client user-delegated access to permission "read"
     Then Pocket ID's record of that API definition has permission "read"
     And Pocket ID's API access for that client delegates permission "read"
+    And get_client_api_access for that client agrees with Pocket ID
+    And "get_api_definition" for that API definition agrees with Pocket ID
+    And "list_api_definitions" lists that API definition
+
+  Scenario: An API definition can be renamed and deleted
+    Given an API definition "{unique}-api" for resource "https://api.example.com/{unique}"
+    When I rename that API definition to "{unique}-api-renamed"
+    Then Pocket ID's record of that API definition has:
+      | name | {unique}-api-renamed |
+    When I delete that API definition
+    Then Pocket ID no longer has that API definition
