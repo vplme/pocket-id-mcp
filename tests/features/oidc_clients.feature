@@ -40,14 +40,6 @@ Feature: OIDC client tools
     Then Pocket ID accepts the new secret as that client's credential
     But Pocket ID rejects "{unique}-chosen-secret" as that client's credential
 
-  # Pocket ID's introspection endpoint authenticates with OAuth client
-  # credentials, not with an API key, so the introspect_token tool cannot
-  # succeed in this server's auth model. Pinned so the tool surface can be
-  # documented accurately; if this starts passing, revisit the tool.
-  Scenario: introspect_token is refused under API-key authentication
-    When I introspect the token "not-a-real-token" through the tool
-    Then the tool fails with status 401 and "unauthorized"
-
   Scenario: Previewing a client for a user reports that user's claims
     Given a confidential OIDC client "{unique}"
     And a user "{unique}-viewer"

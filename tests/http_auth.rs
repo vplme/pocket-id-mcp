@@ -1,5 +1,5 @@
 //! HTTP-mode integration tests: RFC 9728 metadata, 401 challenges, audience
-//! rejection, group admission, introspection fallback, and a happy-path MCP
+//! rejection, group admission, opaque-token rejection, and a happy-path MCP
 //! tool call that proves the client bearer token is never forwarded upstream.
 
 use std::collections::HashMap;
@@ -121,7 +121,7 @@ fn make_config(pocket_id_url: &str, issuer: &str, allowed_groups: Option<&str>) 
     Arc::new(Config::from_vars(&vars).unwrap())
 }
 
-fn make_state(config: &Arc<Config>, client: &Arc<PocketIdClient>) -> Arc<HttpState> {
+fn make_state(config: &Arc<Config>, _client: &Arc<PocketIdClient>) -> Arc<HttpState> {
     let http_config = config.http.clone().unwrap();
     let HttpAuthMode::OAuth(oauth) = http_config.auth else {
         panic!("test config must be in oauth mode");
@@ -130,12 +130,7 @@ fn make_state(config: &Arc<Config>, client: &Arc<PocketIdClient>) -> Arc<HttpSta
         metadata_url: metadata_url_for(&http_config.public_url),
         resource: http_config.public_url.clone(),
         issuer: oauth.issuer.clone(),
-        authenticator: Authenticator::new(
-            oauth,
-            http_config.public_url,
-            config.pocket_id_url.clone(),
-            client.clone(),
-        ),
+        authenticator: Authenticator::new(oauth, http_config.public_url),
     })))
 }
 
@@ -472,48 +467,29 @@ async fn admitted_oauth_caller_is_attributed_by_subject() {
 }
 
 #[tokio::test]
-async fn opaque_token_falls_back_to_pocket_id_introspection() {
-    // The mock server plays both the Pocket ID upstream and the issuer.
+async fn opaque_token_rejected_without_upstream_contact() {
+    // Pocket ID's introspection endpoint requires OAuth client credentials
+    // and only introspects the caller's own tokens, so there is no fallback
+    // for opaque tokens: they are rejected outright, and the upstream is
+    // never contacted (the mock has no introspection route mounted, and an
+    // unexpected request would fail the mock server's verification).
     let pocket = MockServer::start().await;
     mount_issuer(&pocket).await;
-    Mock::given(method("POST"))
-        .and(path("/api/oidc/introspect"))
-        .and(wiremock::matchers::header("X-API-KEY", "upstream-key"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "active": true,
-            "sub": "user-2",
-            "aud": RESOURCE,
-            "groups": ["admins"],
-        })))
-        .expect(1)
-        .mount(&pocket)
-        .await;
 
-    let config = make_config(&pocket.uri(), &pocket.uri(), Some("admins"));
+    let config = make_config(&pocket.uri(), &pocket.uri(), None);
     let client = Arc::new(PocketIdClient::new(&pocket.uri(), "upstream-key".into()));
     let state = make_state(&config, &client);
 
-    let claims = authenticator(&state)
+    let err = authenticator(&state)
         .validate("opaque-token-value")
         .await
-        .unwrap();
-    assert_eq!(claims["sub"], "user-2");
-}
-
-#[tokio::test]
-async fn opaque_token_rejected_for_external_issuer() {
-    let issuer = MockServer::start().await;
-    mount_issuer(&issuer).await;
-    // Issuer differs from the Pocket ID URL → no introspection fallback.
-    let config = make_config("https://id.example.com", &issuer.uri(), None);
-    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
-    let state = make_state(&config, &client);
-
-    let err = authenticator(&state)
-        .validate("opaque-token")
-        .await
         .unwrap_err();
-    assert!(matches!(err, AuthError::Unauthorized(_)));
+    match err {
+        AuthError::Unauthorized(reason) => {
+            assert!(reason.contains("JWT"), "unhelpful reason: {reason}")
+        }
+        other => panic!("expected Unauthorized, got {other:?}"),
+    }
 }
 
 /// Matcher asserting the upstream request does NOT carry an Authorization

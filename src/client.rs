@@ -255,18 +255,6 @@ impl PocketIdClient {
         self.execute(req, &operation).await.map(|_| ())
     }
 
-    /// `application/x-www-form-urlencoded` POST (token introspection).
-    pub async fn form<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        form: &[(&str, &str)],
-    ) -> Result<T, ApiError> {
-        let operation = format!("POST {path}");
-        let req = self.request(Method::POST, path, &[]).form(form);
-        let resp = self.execute(req, &operation).await?;
-        Self::decode(resp, &operation).await
-    }
-
     /// Binary GET preserving bytes and content type.
     pub async fn binary(
         &self,

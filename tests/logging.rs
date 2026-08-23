@@ -275,7 +275,7 @@ async fn tool_call_record_omits_secret_bearing_arguments() {
         call_tool_over_http(
             make_router("none"),
             None,
-            "introspect_token",
+            "verify_current_user_email",
             json!({ "token": TOKEN }),
         )
         .await;
@@ -284,7 +284,7 @@ async fn tool_call_record_omits_secret_bearing_arguments() {
 
     assert!(logs.contains("tool call"), "no tool record: {logs}");
     assert!(
-        logs.contains("tool=introspect_token"),
+        logs.contains("tool=verify_current_user_email"),
         "no tool name: {logs}"
     );
     assert!(
