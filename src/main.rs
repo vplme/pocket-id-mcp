@@ -67,10 +67,10 @@ async fn main() -> ExitCode {
         }
     };
 
-    let client = Arc::new(PocketIdClient::new(
-        &config.pocket_id_url,
-        config.api_key.clone(),
-    ));
+    let client = Arc::new(
+        PocketIdClient::new(&config.pocket_id_url, config.api_key.clone())
+            .with_private_upload_urls(config.allow_private_upload_urls),
+    );
 
     // Startup connectivity validation: distinguish unreachable from unauthorized.
     match client

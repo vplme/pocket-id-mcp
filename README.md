@@ -62,6 +62,7 @@ On startup the server validates connectivity and the API key against `GET /api/v
 | `POCKET_ID_API_KEY` | yes | — | Admin API key (sent as `X-API-KEY`) |
 | `POCKET_ID_MCP_READ_ONLY` | no | `false` | `true`/`1`/`yes`: register only read tools |
 | `POCKET_ID_MCP_ALLOW_DANGEROUS` | no | `false` | `true`/`1`/`yes`: also register dangerous tools |
+| `POCKET_ID_MCP_ALLOW_PRIVATE_UPLOAD_URLS` | no | `false` | `true`/`1`/`yes`: let url-based image uploads fetch from private/internal addresses (disables the SSRF guard) |
 | `POCKET_ID_MCP_TRANSPORT` | no | `stdio` | `stdio` or `http` |
 | `POCKET_ID_MCP_LOG_FORMAT` | no | `text` on a terminal, else `json` | `text` or `json` — see [Logging](#logging) |
 | `POCKET_ID_MCP_HTTP_BIND` | no | `127.0.0.1:8756` | HTTP mode: bind address |
