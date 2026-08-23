@@ -176,6 +176,8 @@ pub struct Config {
     pub api_key: String,
     pub read_only: bool,
     pub allow_dangerous: bool,
+    /// Permit server-side url uploads to fetch from non-public addresses.
+    pub allow_private_upload_urls: bool,
     pub transport: Transport,
     pub http: Option<HttpConfig>,
 }
@@ -191,6 +193,8 @@ impl Config {
         let api_key = require(vars, "POCKET_ID_API_KEY")?;
         let read_only = lenient_bool(vars.get("POCKET_ID_MCP_READ_ONLY"));
         let allow_dangerous = lenient_bool(vars.get("POCKET_ID_MCP_ALLOW_DANGEROUS"));
+        let allow_private_upload_urls =
+            lenient_bool(vars.get("POCKET_ID_MCP_ALLOW_PRIVATE_UPLOAD_URLS"));
 
         let transport = match vars
             .get("POCKET_ID_MCP_TRANSPORT")
@@ -218,6 +222,7 @@ impl Config {
             api_key,
             read_only,
             allow_dangerous,
+            allow_private_upload_urls,
             transport,
             http,
         })

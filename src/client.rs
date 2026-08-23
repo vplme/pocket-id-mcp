@@ -54,6 +54,51 @@ pub struct PocketIdClient {
     http: reqwest::Client,
     base_url: String,
     api_key: String,
+    /// Permit server-side url uploads to resolve to non-public addresses
+    /// (`POCKET_ID_MCP_ALLOW_PRIVATE_UPLOAD_URLS`).
+    allow_private_upload_urls: bool,
+}
+
+/// Whether an address is publicly routable — the SSRF guard for server-side
+/// url fetches. Conservative: every special-purpose range is treated as
+/// non-public.
+fn is_public_address(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_unspecified()
+                // "this network" (0.0.0.0/8)
+                || o[0] == 0
+                // carrier-grade NAT (100.64.0.0/10)
+                || (o[0] == 100 && (o[1] & 0xc0) == 64)
+                // IETF protocol assignments (192.0.0.0/24)
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+                // benchmarking (198.18.0.0/15)
+                || (o[0] == 198 && (o[1] & 0xfe) == 18)
+                // reserved (240.0.0.0/4)
+                || o[0] >= 240)
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_address(IpAddr::V4(v4));
+            }
+            let seg = v6.segments();
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                // unique local (fc00::/7)
+                || (seg[0] & 0xfe00) == 0xfc00
+                // link local (fe80::/10)
+                || (seg[0] & 0xffc0) == 0xfe80
+                // documentation (2001:db8::/32)
+                || (seg[0] == 0x2001 && seg[1] == 0xdb8))
+        }
+    }
 }
 
 impl std::fmt::Debug for PocketIdClient {
@@ -93,7 +138,14 @@ impl PocketIdClient {
                 .expect("reqwest client construction cannot fail with static config"),
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
+            allow_private_upload_urls: false,
         }
+    }
+
+    /// Opt out of the SSRF guard on url uploads (operator setting).
+    pub fn with_private_upload_urls(mut self, allow: bool) -> Self {
+        self.allow_private_upload_urls = allow;
+        self
     }
 
     pub fn base_url(&self) -> &str {
@@ -263,17 +315,66 @@ impl PocketIdClient {
                 if parsed.scheme() != "https" {
                     return Err(ApiError::Input("url uploads must use https".to_string()));
                 }
+                let host = parsed
+                    .host_str()
+                    .ok_or_else(|| ApiError::Input("url has no host".to_string()))?
+                    .to_string();
+                let port = parsed.port().unwrap_or(443);
+                // SSRF guard: this fetch runs with the server's network
+                // position, and callers control the url. Resolve the host
+                // up front, refuse anything that maps to a non-public
+                // address, and pin the vetted addresses on the client so
+                // the actual connection cannot re-resolve elsewhere.
+                let addrs: Vec<std::net::SocketAddr> = match parsed.host() {
+                    Some(url::Host::Ipv4(ip)) => vec![(ip, port).into()],
+                    Some(url::Host::Ipv6(ip)) => vec![(ip, port).into()],
+                    _ => tokio::net::lookup_host((host.as_str(), port))
+                        .await
+                        .map_err(|e| ApiError::Input(format!("cannot resolve {host}: {e}")))?
+                        .collect(),
+                };
+                if addrs.is_empty() {
+                    return Err(ApiError::Input(format!("{host} resolves to no addresses")));
+                }
+                if !self.allow_private_upload_urls {
+                    if let Some(bad) = addrs.iter().find(|a| !is_public_address(a.ip())) {
+                        return Err(ApiError::Input(format!(
+                            "refusing server-side fetch: {host} resolves to the non-public \
+                             address {}; upload from a file_path instead, or set \
+                             POCKET_ID_MCP_ALLOW_PRIVATE_UPLOAD_URLS=true if this server \
+                             should fetch from internal addresses",
+                            bad.ip()
+                        )));
+                    }
+                }
+                let mut builder = reqwest::Client::builder()
+                    .user_agent(concat!("pocket-id-mcp/", env!("CARGO_PKG_VERSION")))
+                    // A redirect could point back into the private network
+                    // after the target vetted clean; don't follow any.
+                    .redirect(reqwest::redirect::Policy::none());
+                if matches!(parsed.host(), Some(url::Host::Domain(_))) {
+                    builder = builder.resolve_to_addrs(&host, &addrs);
+                }
+                let fetcher = builder
+                    .build()
+                    .map_err(|e| ApiError::Input(format!("cannot build fetch client: {e}")))?;
                 let operation = format!("fetch {url}");
-                let resp = self
-                    .http
-                    .get(parsed.clone())
-                    .send()
-                    .await
-                    .map_err(|source| ApiError::Network {
+                let resp = fetcher.get(parsed.clone()).send().await.map_err(|source| {
+                    ApiError::Network {
                         operation: operation.clone(),
-                        host: parsed.host_str().unwrap_or("?").to_string(),
+                        host: host.clone(),
                         source,
-                    })?;
+                    }
+                })?;
+                if resp.status().is_redirection() {
+                    return Err(ApiError::Api {
+                        status: resp.status(),
+                        operation,
+                        message: "redirects are not followed for url uploads; \
+                                  pass the final url directly"
+                            .to_string(),
+                    });
+                }
                 if !resp.status().is_success() {
                     return Err(ApiError::Api {
                         status: resp.status(),
@@ -431,6 +532,56 @@ mod tests {
         };
         let err = client.load_file_source(&http_url).await.unwrap_err();
         assert!(err.to_string().contains("https"));
+    }
+
+    #[tokio::test]
+    async fn private_url_uploads_rejected() {
+        let client = PocketIdClient::new("http://127.0.0.1:1", "k".to_string());
+        for url in [
+            "https://127.0.0.1/x.png",
+            "https://[::1]/x.png",
+            "https://localhost/x.png",
+            "https://10.1.2.3/x.png",
+            "https://192.168.1.10/logo.png",
+            "https://169.254.169.254/latest/meta-data",
+        ] {
+            let err = client
+                .load_file_source(&FileSource {
+                    file_path: None,
+                    url: Some(url.into()),
+                })
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("non-public"), "url {url}: {err}");
+        }
+    }
+
+    #[test]
+    fn public_address_classification() {
+        use std::net::IpAddr;
+        let public = ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"];
+        for ip in public {
+            assert!(is_public_address(ip.parse::<IpAddr>().unwrap()), "{ip}");
+        }
+        let private = [
+            "127.0.0.1",
+            "10.0.0.1",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "240.0.0.1",
+            "::1",
+            "fe80::1",
+            "fc00::1",
+            "fd12:3456::1",
+            "::ffff:10.0.0.1",
+            "2001:db8::1",
+        ];
+        for ip in private {
+            assert!(!is_public_address(ip.parse::<IpAddr>().unwrap()), "{ip}");
+        }
     }
 
     #[tokio::test]
