@@ -181,6 +181,8 @@ All of this can also be done through this server's own tools (`create_api_defini
 
 **Who gets in.** Anyone who completes the OAuth flow wields the server's admin API key. Restrict admission twice: at the issuer (allowed user groups on the OAuth client) *and* at the server (`POCKET_ID_MCP_ALLOWED_GROUPS=admins`, claim name configurable via `POCKET_ID_MCP_GROUPS_CLAIM`).
 
+**One upstream identity.** Every tool call reaches Pocket ID with the server's admin API key, regardless of which OAuth caller invoked it — Pocket ID's own audit log attributes all actions to the key's owning service account (the MCP access log records each caller's `sub`). Because "current user" would mean that service account rather than the caller, the self-service tools (`get_current_user`, `update_current_user`, the profile-picture and email-verification tools, `list_my_*`, `revoke_my_authorized_client`, `list_my_audit_logs`) are not registered in OAuth mode — act on users explicitly by ID instead.
+
 **TLS / reverse proxy.** The server binds `127.0.0.1` and terminates no TLS. Put it behind your reverse proxy:
 
 ```caddy

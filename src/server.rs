@@ -8,11 +8,31 @@ use rmcp::model::*;
 use rmcp::{ErrorData as McpError, ServerHandler, prompt_handler, tool_handler};
 
 use crate::client::{ApiError, BinaryResponse, PocketIdClient};
-use crate::config::Config;
+use crate::config::{Config, HttpAuthMode};
 
 /// Image responses larger than this are written to a temp file instead of
 /// being embedded as an MCP image content block.
 const INLINE_IMAGE_LIMIT: usize = 2 * 1024 * 1024;
+
+/// Tools that act on "the current user". Every upstream call authenticates
+/// with the server's admin API key, so "current user" is always the key's
+/// owning service account — never the MCP caller. These tools are only
+/// registered where the operator plausibly IS that account (stdio, and the
+/// shared-secret/loopback HTTP modes); in OAuth mode, where distinct users
+/// are admitted, they would let any caller silently read or mutate the
+/// service account itself.
+const SELF_SERVICE_TOOLS: &[&str] = &[
+    "get_current_user",
+    "update_current_user",
+    "update_current_user_profile_picture",
+    "reset_current_user_profile_picture",
+    "send_current_user_email_verification",
+    "verify_current_user_email",
+    "list_my_authorized_clients",
+    "revoke_my_authorized_client",
+    "list_my_accessible_clients",
+    "list_my_audit_logs",
+];
 
 #[derive(Clone)]
 pub struct PocketIdServer {
@@ -35,6 +55,16 @@ impl PocketIdServer {
                 tool_router =
                     tool_router + Self::identity_dangerous_tools() + Self::admin_dangerous_tools();
             }
+        }
+
+        let multi_caller = matches!(
+            config.http.as_ref().map(|h| &h.auth),
+            Some(HttpAuthMode::OAuth(_))
+        );
+        if multi_caller {
+            tool_router
+                .map
+                .retain(|name, _| !SELF_SERVICE_TOOLS.contains(&name.as_ref()));
         }
 
         for route in tool_router.map.values_mut() {
