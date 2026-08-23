@@ -196,3 +196,78 @@ fn all_output_schemas_are_object_rooted() {
         }
     }
 }
+
+/// "Current user" upstream is always the API key's service account, so the
+/// self-service tools are pulled from HTTP OAuth mode, where callers are
+/// distinct admitted users — and kept everywhere the operator plausibly IS
+/// the service account.
+#[test]
+fn self_service_tools_not_registered_in_oauth_mode() {
+    let self_service = [
+        "get_current_user",
+        "update_current_user",
+        "update_current_user_profile_picture",
+        "reset_current_user_profile_picture",
+        "send_current_user_email_verification",
+        "verify_current_user_email",
+        "list_my_authorized_clients",
+        "revoke_my_authorized_client",
+        "list_my_accessible_clients",
+        "list_my_audit_logs",
+    ];
+
+    let base = || {
+        HashMap::from([
+            (
+                "POCKET_ID_URL".to_string(),
+                "https://id.example.com".to_string(),
+            ),
+            ("POCKET_ID_API_KEY".to_string(), "k".to_string()),
+            ("POCKET_ID_MCP_TRANSPORT".to_string(), "http".to_string()),
+        ])
+    };
+    let build = |vars: HashMap<String, String>| {
+        let config = Arc::new(Config::from_vars(&vars).unwrap());
+        let client = Arc::new(PocketIdClient::new(
+            &config.pocket_id_url,
+            config.api_key.clone(),
+        ));
+        PocketIdServer::new(config, client)
+    };
+
+    let mut oauth_vars = base();
+    oauth_vars.insert(
+        "POCKET_ID_MCP_PUBLIC_URL".to_string(),
+        "https://mcp.example.com".to_string(),
+    );
+    let oauth_names: BTreeSet<_> = build(oauth_vars)
+        .registered_tool_names()
+        .into_iter()
+        .collect();
+
+    let mut token_vars = base();
+    token_vars.insert("POCKET_ID_MCP_HTTP_AUTH".to_string(), "token".to_string());
+    token_vars.insert("POCKET_ID_MCP_HTTP_TOKEN".to_string(), "s3cret".to_string());
+    let token_names: BTreeSet<_> = build(token_vars)
+        .registered_tool_names()
+        .into_iter()
+        .collect();
+
+    let stdio_names: BTreeSet<_> = server_with(false, false)
+        .registered_tool_names()
+        .into_iter()
+        .collect();
+
+    for name in self_service {
+        assert!(
+            !oauth_names.contains(name),
+            "{name} registered in oauth mode"
+        );
+        assert!(token_names.contains(name), "{name} missing in token mode");
+        assert!(stdio_names.contains(name), "{name} missing on stdio");
+    }
+    // Nothing else is affected by the OAuth-mode filtering.
+    let removed: BTreeSet<_> = stdio_names.difference(&oauth_names).cloned().collect();
+    let expected: BTreeSet<_> = self_service.iter().map(|s| s.to_string()).collect();
+    assert_eq!(removed, expected);
+}
