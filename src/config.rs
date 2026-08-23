@@ -256,18 +256,28 @@ impl Config {
                     }
                     _ => pocket_id_url.to_string(),
                 };
-                let allowed_groups = vars.get("POCKET_ID_MCP_ALLOWED_GROUPS").and_then(|v| {
-                    let groups: Vec<String> = v
-                        .split(',')
-                        .map(|g| g.trim().to_string())
-                        .filter(|g| !g.is_empty())
-                        .collect();
-                    if groups.is_empty() {
-                        None
-                    } else {
+                // Fail closed: a set-but-empty value (e.g. an unset shell
+                // variable interpolated to "") must not silently become
+                // allow-all — that is what unsetting the variable means.
+                let allowed_groups = match vars.get("POCKET_ID_MCP_ALLOWED_GROUPS") {
+                    None => None,
+                    Some(v) => {
+                        let groups: Vec<String> = v
+                            .split(',')
+                            .map(|g| g.trim().to_string())
+                            .filter(|g| !g.is_empty())
+                            .collect();
+                        if groups.is_empty() {
+                            return Err(ConfigError::Invalid {
+                                var: "POCKET_ID_MCP_ALLOWED_GROUPS",
+                                reason: "set but names no groups; list at least one group, \
+                                         or unset it to admit all authenticated users"
+                                    .to_string(),
+                            });
+                        }
                         Some(groups)
                     }
-                });
+                };
                 let groups_claim = vars
                     .get("POCKET_ID_MCP_GROUPS_CLAIM")
                     .map(|v| v.trim().to_string())
@@ -464,6 +474,23 @@ mod tests {
             Some(vec!["admins".to_string(), "ops".to_string()])
         );
         assert_eq!(oauth.groups_claim, "realm_roles");
+    }
+
+    #[test]
+    fn empty_allowed_groups_rejected_not_allow_all() {
+        for value in ["", " ", ",", " , "] {
+            let mut vars = http_vars();
+            vars.insert(
+                "POCKET_ID_MCP_PUBLIC_URL".into(),
+                "https://mcp.example.com".into(),
+            );
+            vars.insert("POCKET_ID_MCP_ALLOWED_GROUPS".into(), value.into());
+            let err = Config::from_vars(&vars).unwrap_err();
+            assert!(
+                err.to_string().contains("POCKET_ID_MCP_ALLOWED_GROUPS"),
+                "value {value:?}: {err}"
+            );
+        }
     }
 
     #[test]
