@@ -50,6 +50,13 @@ pub struct BinaryResponse {
     pub content_type: String,
 }
 
+/// Cap on establishing a TCP/TLS connection to the upstream.
+pub const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Cap on a whole request/response exchange; generous enough for image
+/// uploads and paginated listings, small enough that a hung upstream fails
+/// instead of stalling a tool call forever.
+pub const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub struct PocketIdClient {
     http: reqwest::Client,
     base_url: String,
@@ -89,6 +96,8 @@ impl PocketIdClient {
         Self {
             http: reqwest::Client::builder()
                 .user_agent(concat!("pocket-id-mcp/", env!("CARGO_PKG_VERSION")))
+                .connect_timeout(CONNECT_TIMEOUT)
+                .timeout(REQUEST_TIMEOUT)
                 .build()
                 .expect("reqwest client construction cannot fail with static config"),
             base_url: base_url.trim_end_matches('/').to_string(),
