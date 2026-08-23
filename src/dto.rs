@@ -64,8 +64,28 @@ pub struct Paginated<T> {
     pub pagination: Option<Pagination>,
 }
 
+/// Sort direction for list endpoints. Inlined so the advertised schema is a
+/// plain string enum rather than a `$ref`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SortDirection::Asc => "asc",
+            SortDirection::Desc => "desc",
+        }
+    }
+}
+
 /// Common list-endpoint inputs, flattened into tool parameters.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListParams {
     /// Page number, starting at 1.
     pub page: Option<i64>,
@@ -73,8 +93,8 @@ pub struct ListParams {
     pub limit: Option<i64>,
     /// Column to sort by.
     pub sort_column: Option<String>,
-    /// Sort direction: "asc" or "desc".
-    pub sort_direction: Option<String>,
+    /// Sort direction.
+    pub sort_direction: Option<SortDirection>,
 }
 
 impl ListParams {
@@ -89,8 +109,8 @@ impl ListParams {
         if let Some(col) = &self.sort_column {
             q.push(("sort[column]".to_string(), col.clone()));
         }
-        if let Some(dir) = &self.sort_direction {
-            q.push(("sort[direction]".to_string(), dir.clone()));
+        if let Some(dir) = self.sort_direction {
+            q.push(("sort[direction]".to_string(), dir.as_str().to_string()));
         }
         q
     }
@@ -146,6 +166,7 @@ pub struct User {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UserInput {
     /// Username (required, max 50 chars).
     pub username: String,
@@ -195,6 +216,7 @@ pub struct UserGroup {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UserGroupInput {
     /// Technical name (2–255 chars), used as the claim value.
     pub name: String,
@@ -253,6 +275,7 @@ pub struct OidcClient {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct OidcClientInput {
     /// Client display name (required, max 50 chars).
     pub name: String,
@@ -488,6 +511,7 @@ pub struct ScimServiceProvider {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct ScimServiceProviderInput {
     /// SCIM base endpoint of the downstream provider (required).
     pub endpoint: String,

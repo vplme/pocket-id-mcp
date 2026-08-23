@@ -13,12 +13,14 @@ use crate::tools::identity::SearchListParams;
 use crate::tools::{client_seg, seg};
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ClientIdParam {
     /// OIDC client ID.
     pub client_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateOidcClientParams {
     /// ID of the OIDC client to update.
     pub client_id: String,
@@ -27,6 +29,7 @@ pub struct UpdateOidcClientParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateClientSecretParams {
     /// OIDC client ID.
     pub client_id: String,
@@ -35,6 +38,7 @@ pub struct CreateClientSecretParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AllowedGroupsParams {
     /// ID of the OIDC client to restrict.
     pub client_id: String,
@@ -43,6 +47,7 @@ pub struct AllowedGroupsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PreviewParams {
     /// OIDC client ID.
     pub client_id: String,
@@ -53,6 +58,7 @@ pub struct PreviewParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ClientLogoParams {
     /// OIDC client ID.
     pub client_id: String,
@@ -61,6 +67,7 @@ pub struct ClientLogoParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateClientLogoParams {
     /// OIDC client ID.
     pub client_id: String,
@@ -71,12 +78,14 @@ pub struct UpdateClientLogoParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct IntrospectParams {
     /// The token to introspect (access or refresh token issued by this instance).
     pub token: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UserAuthorizedClientsParams {
     /// User ID.
     pub user_id: String,
@@ -85,6 +94,7 @@ pub struct UserAuthorizedClientsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateClientApiAccessParams {
     /// OIDC client ID.
     pub client_id: String,
@@ -95,6 +105,7 @@ pub struct UpdateClientApiAccessParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateApiDefinitionParams {
     /// Display name (max 50 chars).
     pub name: String,
@@ -103,12 +114,14 @@ pub struct CreateApiDefinitionParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ApiDefinitionIdParam {
     /// API definition ID.
     pub api_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateApiDefinitionParams {
     /// API definition ID.
     pub api_id: String,
@@ -117,6 +130,7 @@ pub struct UpdateApiDefinitionParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SetApiPermissionsParams {
     /// API definition ID.
     pub api_id: String,
@@ -125,6 +139,7 @@ pub struct SetApiPermissionsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GroupAllowedClientsParams {
     /// User group ID.
     pub group_id: String,

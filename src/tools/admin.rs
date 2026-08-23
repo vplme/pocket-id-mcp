@@ -62,6 +62,7 @@ fn image_query(
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetImageParams {
     /// Which application image to fetch.
     pub image_type: ImageType,
@@ -70,6 +71,7 @@ pub struct GetImageParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateImageParams {
     /// Which application image to replace.
     pub image_type: ImageType,
@@ -80,6 +82,7 @@ pub struct UpdateImageParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DeleteImageParams {
     /// Which application image to reset. Only background and
     /// default_profile_picture can be reset upstream.
@@ -87,6 +90,7 @@ pub struct DeleteImageParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateAppConfigParams {
     /// Complete configuration as a single flat object of camelCase keys to
     /// string values, e.g. {"appName": "...", "sessionDuration": "60", ...}.
@@ -97,7 +101,29 @@ pub struct UpdateAppConfigParams {
     pub config: serde_json::Value,
 }
 
+/// Audit-log network location filter. The upstream server recognizes exactly
+/// these values (anything else is silently ignored there), so the closed set
+/// is enforced here in the schema. Inlined so the advertised schema is a
+/// plain string enum rather than a `$ref`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum AuditLogLocation {
+    Internal,
+    External,
+}
+
+impl AuditLogLocation {
+    fn as_str(self) -> &'static str {
+        match self {
+            AuditLogLocation::Internal => "internal",
+            AuditLogLocation::External => "external",
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AuditLogFilterParams {
     /// Filter by user ID.
     pub user_id: Option<String>,
@@ -105,9 +131,8 @@ pub struct AuditLogFilterParams {
     pub event: Option<String>,
     /// Filter by OIDC client name.
     pub client_name: Option<String>,
-    /// Filter by network location: only "internal" or "external" are
-    /// recognized; any other value is silently ignored by the server.
-    pub location: Option<String>,
+    /// Filter by network location.
+    pub location: Option<AuditLogLocation>,
     #[serde(flatten)]
     pub list: ListParams,
 }
@@ -126,14 +151,15 @@ impl AuditLogFilterParams {
         if let Some(v) = &self.client_name {
             q.push(("filters[clientName]".to_string(), v.clone()));
         }
-        if let Some(v) = &self.location {
-            q.push(("filters[location]".to_string(), v.clone()));
+        if let Some(v) = self.location {
+            q.push(("filters[location]".to_string(), v.as_str().to_string()));
         }
         q
     }
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateApiKeyParams {
     /// Key name (3–50 chars).
     pub name: String,
@@ -143,18 +169,21 @@ pub struct CreateApiKeyParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ApiKeyIdParam {
     /// API key ID.
     pub key_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ScimProviderIdParam {
     /// SCIM service provider ID.
     pub provider_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateScimProviderParams {
     /// SCIM service provider ID.
     pub provider_id: String,
@@ -163,6 +192,7 @@ pub struct UpdateScimProviderParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ClientIdOnlyParam {
     /// OIDC client ID.
     pub client_id: String,

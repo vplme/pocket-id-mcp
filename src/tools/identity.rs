@@ -13,6 +13,7 @@ use crate::server::{PocketIdServer, err_str};
 use crate::tools::seg;
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SearchListParams {
     /// Free-text search filter.
     pub search: Option<String>,
@@ -31,18 +32,21 @@ impl SearchListParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UserIdParam {
     /// User ID.
     pub user_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GroupIdParam {
     /// User group ID.
     pub group_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateUserParams {
     /// ID of the user to update.
     pub user_id: String,
@@ -51,6 +55,7 @@ pub struct UpdateUserParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UserProfilePictureParams {
     /// ID of the user whose profile picture to replace.
     pub user_id: String,
@@ -59,6 +64,7 @@ pub struct UserProfilePictureParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SetUserGroupsParams {
     /// ID of the user whose group memberships to replace.
     pub user_id: String,
@@ -67,6 +73,7 @@ pub struct SetUserGroupsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateGroupParams {
     /// ID of the group to update.
     pub group_id: String,
@@ -75,6 +82,7 @@ pub struct UpdateGroupParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SetGroupUsersParams {
     /// ID of the group whose member list to replace.
     pub group_id: String,
@@ -83,6 +91,7 @@ pub struct SetGroupUsersParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UserClaimsParams {
     /// ID of the user whose custom claims to replace.
     pub user_id: String,
@@ -91,6 +100,7 @@ pub struct UserClaimsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GroupClaimsParams {
     /// ID of the group whose custom claims to replace.
     pub group_id: String,
@@ -99,6 +109,7 @@ pub struct GroupClaimsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DeletePasskeyParams {
     /// ID of the user owning the credential.
     pub user_id: String,
@@ -107,6 +118,7 @@ pub struct DeletePasskeyParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateSignupTokenParams {
     /// Token lifetime as a Go duration string, e.g. "1h", "24h", "168h"
     /// (= 7 days). Only ns/us/ms/s/m/h units are accepted — "7d" is rejected.
@@ -118,12 +130,14 @@ pub struct CreateSignupTokenParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SignupTokenIdParam {
     /// Signup token ID.
     pub token_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct OneTimeAccessEmailAdminParams {
     /// ID of the user to send the login email to.
     pub user_id: String,
@@ -133,6 +147,7 @@ pub struct OneTimeAccessEmailAdminParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct OneTimeAccessEmailParams {
     /// Email address of the account requesting a login link.
     pub email: String,
@@ -141,6 +156,7 @@ pub struct OneTimeAccessEmailParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct VerifyEmailParams {
     /// Verification token from the email.
     pub token: String,
