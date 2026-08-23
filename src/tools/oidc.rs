@@ -1,4 +1,4 @@
-//! OIDC tools: clients, secrets, logos, grants, introspection, API access.
+//! OIDC tools: clients, secrets, logos, grants, API access.
 
 use reqwest::Method;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -75,13 +75,6 @@ pub struct UpdateClientLogoParams {
     pub light: Option<bool>,
     #[serde(flatten)]
     pub source: FileSource,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct IntrospectParams {
-    /// The token to introspect (access or refresh token issued by this instance).
-    pub token: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -249,20 +242,6 @@ impl PocketIdServer {
             Ok(bin) => self.binary_result(bin),
             Err(e) => Ok(Self::api_error_result(e)),
         }
-    }
-
-    #[tool(
-        description = "Introspect a token issued by this instance: whether it is active, and its claims."
-    )]
-    pub async fn introspect_token(
-        &self,
-        Parameters(p): Parameters<IntrospectParams>,
-    ) -> Result<Json<Enveloped<AnyJson>>, String> {
-        self.client
-            .form("/api/oidc/introspect", &[("token", p.token.as_str())])
-            .await
-            .map(|v| enveloped(AnyJson(v)))
-            .map_err(err_str)
     }
 
     #[tool(description = "List the OIDC clients a user has authorized (granted consent to).")]

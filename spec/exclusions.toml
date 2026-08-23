@@ -51,3 +51,8 @@ reason = "device-login flow exists for interactive CLI login journeys an assista
 method = "POST"
 path = "/api/device-login/verification/decision"
 reason = "approving/denying device logins is a human security decision made in the browser UI"
+
+[[exclusion]]
+method = "POST"
+path = "/api/oidc/introspect"
+reason = "RFC 7662 endpoint requiring OAuth client credentials (a client may only introspect its own tokens); never accepts the admin API key, so a tool here could only ever report valid tokens as inactive"

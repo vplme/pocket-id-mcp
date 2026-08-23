@@ -330,12 +330,8 @@ pub async fn serve(config: Arc<Config>, client: Arc<PocketIdClient>) -> anyhow::
 
     let state = match &http_config.auth {
         HttpAuthMode::OAuth(oauth_config) => {
-            let authenticator = Authenticator::new(
-                oauth_config.clone(),
-                http_config.public_url.clone(),
-                config.pocket_id_url.clone(),
-                client.clone(),
-            );
+            let authenticator =
+                Authenticator::new(oauth_config.clone(), http_config.public_url.clone());
             let discovery = authenticator.init().await.map_err(|e| {
                 anyhow::anyhow!(
                     "OAuth issuer validation failed for {}: {e}",

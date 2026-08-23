@@ -118,7 +118,7 @@ fn tools_with_structured_responses_declare_output_schema() {
         "list_users",
         "get_oidc_client",
         "list_api_keys",
-        "introspect_token",
+        "list_all_audit_logs",
     ] {
         let tool = by_name
             .get(name)

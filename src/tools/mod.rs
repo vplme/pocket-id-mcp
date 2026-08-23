@@ -120,7 +120,6 @@ pub const CATALOG: &[ToolSpec] = catalog! {
     "delete_oidc_client_logo" / Write => ["DELETE" "/api/oidc/clients/{id}/logo"];
     "set_group_allowed_oidc_clients" / Write => ["PUT" "/api/user-groups/{id}/allowed-oidc-clients"];
     // --- oidc: tokens and grants -----------------------------------------
-    "introspect_token" / Read => ["POST" "/api/oidc/introspect"];
     "list_user_authorized_clients" / Read => ["GET" "/api/oidc/users/{id}/authorized-clients"];
     "list_my_authorized_clients" / Read => ["GET" "/api/oidc/users/me/authorized-clients"];
     "revoke_my_authorized_client" / Write => ["DELETE" "/api/oidc/users/me/authorized-clients/{clientId}"];
@@ -185,7 +184,7 @@ pub const CATALOG: &[ToolSpec] = catalog! {
 ///
 /// An allowlist, deliberately not a denylist: the safe and unsafe names here
 /// are lexically adjacent — `token_id` identifies a signup token while `token`
-/// (`introspect_token`) is a live bearer token, and `key_id` identifies an API
+/// (`verify_current_user_email`) is a live secret, and `key_id` identifies an API
 /// key while `key` is the key material. Any pattern broad enough to catch
 /// `token` also catches `token_id`, and any pattern narrow enough to spare
 /// `token_id` misses a future `access_token`. Allowlisting inverts the failure
@@ -389,7 +388,7 @@ mod tests {
 
     #[test]
     fn loggable_params_drops_secret_bearing_values() {
-        // introspect_token's `token` is a live bearer token.
+        // verify_current_user_email's `token` is a live secret.
         let a = args(serde_json::json!({
             "token": "eyJhbGciOiJIUzI1NiJ9.secret-payload",
             "client_id": "my-client",

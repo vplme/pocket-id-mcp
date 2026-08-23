@@ -6,7 +6,7 @@
 
 An MCP (Model Context Protocol) server for [Pocket ID](https://pocket-id.org) — the self-hosted, passkey-first OIDC identity provider.
 
-It exposes the complete Pocket ID REST API (103 operations) as **84 curated MCP tools** so AI assistants like Claude can manage your instance conversationally: users, groups, OIDC clients, custom claims, passkeys, branding images, audit logs, API keys, and SCIM provisioning — with safety tiers around destructive operations.
+It exposes the complete Pocket ID REST API (103 operations) as **83 curated MCP tools** so AI assistants like Claude can manage your instance conversationally: users, groups, OIDC clients, custom claims, passkeys, branding images, audit logs, API keys, and SCIM provisioning — with safety tiers around destructive operations.
 
 - **Single static binary** (Rust, [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), fast startup, tiny footprint
 - **Two transports**: stdio (default) and Streamable HTTP secured with OAuth 2.1
@@ -82,7 +82,7 @@ Every tool is classified into exactly one tier. Gated tools are **not registered
 
 | Tier | Contents | Enabled |
 |---|---|---|
-| **read** (34 tools) | All GETs, introspection, previews | always |
+| **read** (33 tools) | All GETs, previews | always |
 | **write** (42 tools) | Create/update, image uploads, LDAP/SCIM sync, group deletes | unless `POCKET_ID_MCP_READ_ONLY` |
 | **dangerous** (8 tools) | User deletion, passkey deletion, one-time login token/email minting, signup-token create/delete, API-key revocation | only with `POCKET_ID_MCP_ALLOW_DANGEROUS` |
 
@@ -220,7 +220,7 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 ## Tool catalog
 
 <details>
-<summary>All 84 tools by area (click to expand)</summary>
+<summary>All 83 tools by area (click to expand)</summary>
 
 **Identity: Users**
 
@@ -303,7 +303,6 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 
 | Tool | Tier |
 |---|---|
-| `introspect_token` | read |
 | `list_user_authorized_clients` | read |
 | `list_my_authorized_clients` | read |
 | `revoke_my_authorized_client` | write |
@@ -405,7 +404,7 @@ Scenario: Updating a client persists every field
     | skipConsent        | true                           |
 ```
 
-Data-table cells are typed by the tool's advertised input schema, so a misspelled parameter fails loudly. 34 scenarios exercise 68 of the 84 tools; the rest need infrastructure the suite does not provide (an SMTP sink, LDAP, a SCIM endpoint, a public CIMD document, a real passkey or consent flow). The suite also pins observed upstream contracts: Pocket ID refuses API-key-authenticated API-key creation/renewal, and token introspection authenticates with OAuth client credentials only, so `create_api_key`, `renew_api_key` and `introspect_token` cannot succeed under this server's API-key auth. Knobs:
+Data-table cells are typed by the tool's advertised input schema, so a misspelled parameter fails loudly. 33 scenarios exercise 67 of the 83 tools; the rest need infrastructure the suite does not provide (an SMTP sink, LDAP, a SCIM endpoint, a public CIMD document, a real passkey or consent flow). The suite also pins observed upstream contracts: Pocket ID refuses API-key-authenticated API-key creation/renewal, so `create_api_key` and `renew_api_key` cannot succeed under this server's API-key auth. Knobs:
 
 | Variable | Purpose |
 |---|---|

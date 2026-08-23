@@ -1,15 +1,11 @@
 //! OAuth 2.1 bearer-token validation: issuer discovery, JWKS caching,
-//! JWT validation with audience binding, introspection fallback, and
-//! group-based admission.
-
-use std::sync::Arc;
+//! JWT validation with audience binding, and group-based admission.
 
 use jsonwebtoken::jwk::{Jwk, JwkSet};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
-use crate::client::PocketIdClient;
 use crate::config::OAuthConfig;
 
 #[derive(Debug)]
@@ -37,25 +33,16 @@ pub struct Authenticator {
     oauth: OAuthConfig,
     /// OAuth resource identifier (the public URL) tokens must be bound to.
     resource: String,
-    pocket_id_url: String,
-    pocket_client: Arc<PocketIdClient>,
     http: reqwest::Client,
     discovery: RwLock<Option<DiscoveryDocument>>,
     jwks: RwLock<Option<JwkSet>>,
 }
 
 impl Authenticator {
-    pub fn new(
-        oauth: OAuthConfig,
-        resource: String,
-        pocket_id_url: String,
-        pocket_client: Arc<PocketIdClient>,
-    ) -> Self {
+    pub fn new(oauth: OAuthConfig, resource: String) -> Self {
         Self {
             oauth,
             resource,
-            pocket_id_url,
-            pocket_client,
             http: reqwest::Client::builder()
                 .user_agent(concat!("pocket-id-mcp/", env!("CARGO_PKG_VERSION")))
                 .connect_timeout(crate::client::CONNECT_TIMEOUT)
@@ -166,8 +153,16 @@ impl Authenticator {
     pub async fn validate(&self, token: &str) -> Result<serde_json::Value, AuthError> {
         let claims = match decode_header(token) {
             Ok(header) => self.validate_jwt(token, header).await?,
-            // Not a JWS — opaque token: introspection fallback.
-            Err(_) => self.introspect(token).await?,
+            // Not a JWS — opaque token. RFC 7662 introspection is not an
+            // option: Pocket ID's introspection endpoint requires OAuth
+            // client credentials and only lets a client introspect its own
+            // tokens, and generic issuers likewise require resource-server
+            // credentials this server deliberately does not hold.
+            Err(_) => {
+                return Err(AuthError::Unauthorized(
+                    "opaque tokens are not supported; present a JWT access token".to_string(),
+                ));
+            }
         };
         self.check_groups(&claims)?;
         Ok(claims)
@@ -211,44 +206,6 @@ impl Authenticator {
             AuthError::Unauthorized(reason.to_string())
         })?;
         Ok(data.claims)
-    }
-
-    /// RFC 7662 fallback for opaque tokens. Only supported when the issuer is
-    /// the Pocket ID instance itself, whose introspection endpoint accepts the
-    /// server's API key; generic issuers require resource-server credentials
-    /// this server deliberately does not hold.
-    async fn introspect(&self, token: &str) -> Result<serde_json::Value, AuthError> {
-        let issuer = self.issuer().trim_end_matches('/');
-        if issuer != self.pocket_id_url.trim_end_matches('/') {
-            return Err(AuthError::Unauthorized(
-                "opaque tokens are not accepted from external issuers; present a JWT access token"
-                    .to_string(),
-            ));
-        }
-        let claims: serde_json::Value = self
-            .pocket_client
-            .form("/api/oidc/introspect", &[("token", token)])
-            .await
-            .map_err(|e| AuthError::Unauthorized(format!("introspection failed: {e}")))?;
-        if claims.get("active").and_then(|a| a.as_bool()) != Some(true) {
-            return Err(AuthError::Unauthorized("token is not active".to_string()));
-        }
-        // Audience binding: enforced when the introspection response carries an aud.
-        if let Some(aud) = claims.get("aud") {
-            let matches = match aud {
-                serde_json::Value::String(s) => s == self.resource(),
-                serde_json::Value::Array(arr) => {
-                    arr.iter().any(|v| v.as_str() == Some(self.resource()))
-                }
-                _ => false,
-            };
-            if !matches {
-                return Err(AuthError::Unauthorized(
-                    "token audience does not match this server's resource identifier".to_string(),
-                ));
-            }
-        }
-        Ok(claims)
     }
 
     fn check_groups(&self, claims: &serde_json::Value) -> Result<(), AuthError> {

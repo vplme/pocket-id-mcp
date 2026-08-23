@@ -209,15 +209,6 @@ async fn rejects_secret(w: &mut LiveWorld, secret: String) {
     );
 }
 
-#[when(expr = "I introspect the token {string} through the tool")]
-async fn introspect_via_tool(w: &mut LiveWorld, token: String) {
-    w.last_error = Some(
-        w.mcp()
-            .call_err("introspect_token", json!({"token": token}))
-            .await,
-    );
-}
-
 // --- group restriction -------------------------------------------------------
 
 #[when("I restrict that client to that group")]
