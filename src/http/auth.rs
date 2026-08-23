@@ -91,6 +91,17 @@ impl Authenticator {
             match self.http.get(url).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     match resp.json::<DiscoveryDocument>().await {
+                        // RFC 8414 §3.3: the metadata's issuer must match the
+                        // configured one, or tokens minted under the declared
+                        // issuer would fail every iss check while startup
+                        // succeeds, masking the misconfiguration. Compared
+                        // slash-insensitively, like the iss claim itself.
+                        Ok(doc) if doc.issuer.trim_end_matches('/') != issuer => {
+                            last_err = format!(
+                                "{url}: metadata declares issuer {:?}, expected {:?}",
+                                doc.issuer, self.oauth.issuer
+                            );
+                        }
                         Ok(doc) => {
                             *self.discovery.write().await = Some(doc.clone());
                             return Ok(doc);
@@ -176,7 +187,13 @@ impl Authenticator {
             .and_then(|a| a.to_string().parse::<Algorithm>().ok())
             .unwrap_or(header.alg);
         let mut validation = Validation::new(alg);
-        validation.set_issuer(&[self.issuer()]);
+        // The configured issuer is normalized without a trailing slash, but
+        // some authorization servers' canonical iss ends in one (common for
+        // path-based issuers like https://sts.example.com/tenant/). The two
+        // spellings name the same issuer; accept both rather than failing
+        // every token over a slash.
+        let issuer = self.issuer().trim_end_matches('/');
+        validation.set_issuer(&[issuer.to_string(), format!("{issuer}/")]);
         validation.set_audience(&[self.resource()]);
         validation.validate_exp = true;
         let data = decode::<serde_json::Value>(token, &key, &validation).map_err(|e| {
