@@ -249,6 +249,63 @@ async fn wrong_audience_rejected() {
 }
 
 #[tokio::test]
+async fn trailing_slash_iss_claim_accepted() {
+    // Some authorization servers' canonical iss ends in a slash while the
+    // configured issuer is normalized without one; the two spellings name
+    // the same issuer and must not fail validation.
+    let issuer = MockServer::start().await;
+    mount_issuer(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), None);
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let state = make_state(&config, &client);
+
+    let token = mint_token(&format!("{}/", issuer.uri()), RESOURCE, None, 3600);
+    let claims = authenticator(&state).validate(&token).await.unwrap();
+    assert_eq!(claims["sub"], "user-1");
+}
+
+#[tokio::test]
+async fn foreign_iss_claim_still_rejected() {
+    let issuer = MockServer::start().await;
+    mount_issuer(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), None);
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let state = make_state(&config, &client);
+
+    let token = mint_token("https://evil.example.com", RESOURCE, None, 3600);
+    let err = authenticator(&state).validate(&token).await.unwrap_err();
+    assert!(matches!(err, AuthError::Unauthorized(_)));
+}
+
+#[tokio::test]
+async fn discovery_issuer_mismatch_fails_closed() {
+    // A discovery document declaring a different issuer than configured must
+    // not be accepted: tokens minted under the declared issuer would fail
+    // every iss check while startup succeeds, masking the misconfiguration.
+    let server = MockServer::start().await;
+    for well_known in [
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+    ] {
+        Mock::given(method("GET"))
+            .and(path(well_known))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "issuer": "https://somewhere-else.example.com",
+                "jwks_uri": format!("{}/jwks.json", server.uri()),
+            })))
+            .mount(&server)
+            .await;
+    }
+
+    let config = make_config("https://id.example.com", &server.uri(), None);
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let state = make_state(&config, &client);
+
+    let err = authenticator(&state).init().await.unwrap_err();
+    assert!(err.contains("declares issuer"), "unexpected error: {err}");
+}
+
+#[tokio::test]
 async fn expired_token_rejected() {
     let issuer = MockServer::start().await;
     mount_issuer(&issuer).await;
