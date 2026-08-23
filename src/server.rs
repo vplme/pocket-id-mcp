@@ -8,7 +8,7 @@ use rmcp::model::*;
 use rmcp::{ErrorData as McpError, ServerHandler, prompt_handler, tool_handler};
 
 use crate::client::{ApiError, BinaryResponse, PocketIdClient};
-use crate::config::Config;
+use crate::config::{Config, Transport};
 
 /// Image responses larger than this are written to a temp file instead of
 /// being embedded as an MCP image content block.
@@ -80,16 +80,42 @@ impl PocketIdServer {
             .collect()
     }
 
-    /// Render a binary API response as a tool result: inline MCP image block,
-    /// or a temp-file path for oversized payloads.
+    /// Render a binary API response as a tool result.
+    ///
+    /// SVG is returned as its markup (MCP image blocks admit only raster
+    /// types, and Pocket ID logos are commonly SVG); other images within the
+    /// size limit are inlined as image blocks. Anything else becomes a
+    /// temp-file path on stdio — where the client shares the filesystem —
+    /// and a tool-level error over HTTP, where a server-local path would be
+    /// useless to the caller and the kept file would leak.
     pub(crate) fn binary_result(&self, bin: BinaryResponse) -> Result<CallToolResult, McpError> {
         use base64::Engine;
-        if bin.bytes.len() <= INLINE_IMAGE_LIMIT && bin.content_type.starts_with("image/") {
+        let mut bin = bin;
+        if bin.bytes.len() <= INLINE_IMAGE_LIMIT && bin.content_type == "image/svg+xml" {
+            match String::from_utf8(bin.bytes) {
+                Ok(svg) => return Ok(CallToolResult::success(vec![ContentBlock::text(svg)])),
+                // Declared SVG but not text: fall through to the generic
+                // binary handling below.
+                Err(e) => bin.bytes = e.into_bytes(),
+            }
+        }
+        if bin.bytes.len() <= INLINE_IMAGE_LIMIT
+            && bin.content_type.starts_with("image/")
+            && bin.content_type != "image/svg+xml"
+        {
             let data = base64::engine::general_purpose::STANDARD.encode(&bin.bytes);
             return Ok(CallToolResult::success(vec![ContentBlock::image(
                 data,
                 bin.content_type,
             )]));
+        }
+        if self.config.transport == Transport::Http {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "{} response ({} bytes) cannot be returned inline over the HTTP transport; \
+                 fetch it from the Pocket ID API directly",
+                bin.content_type,
+                bin.bytes.len(),
+            ))]));
         }
         let ext = match bin.content_type.as_str() {
             "image/png" => "png",
@@ -110,7 +136,7 @@ impl PocketIdServer {
             .keep()
             .map_err(|e| McpError::internal_error(format!("temp file keep: {e}"), None))?;
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "{} response ({} bytes) written to {}",
+            "{} response ({} bytes) written to {} — delete it when done",
             bin.content_type,
             bin.bytes.len(),
             path.display()
@@ -287,5 +313,105 @@ impl ServerHandler for PocketIdServer {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn server(transport: &str) -> PocketIdServer {
+        let mut vars = HashMap::from([
+            (
+                "POCKET_ID_URL".to_string(),
+                "https://id.example.com".to_string(),
+            ),
+            ("POCKET_ID_API_KEY".to_string(), "k".to_string()),
+            ("POCKET_ID_MCP_TRANSPORT".to_string(), transport.to_string()),
+        ]);
+        if transport == "http" {
+            vars.insert("POCKET_ID_MCP_HTTP_AUTH".to_string(), "none".to_string());
+        }
+        let config = Arc::new(Config::from_vars(&vars).unwrap());
+        let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+        PocketIdServer::new(config, client)
+    }
+
+    fn text_of(result: &CallToolResult) -> String {
+        result
+            .content
+            .iter()
+            .filter_map(|c| c.as_text().map(|t| t.text.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn svg_returned_as_markup_not_image_block() {
+        // MCP image blocks admit only raster types; an image/svg+xml block
+        // would be rejected by clients. The markup itself is the useful form.
+        let result = server("stdio")
+            .binary_result(BinaryResponse {
+                bytes: b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec(),
+                content_type: "image/svg+xml".to_string(),
+            })
+            .unwrap();
+        assert!(!result.is_error.unwrap_or(false));
+        assert!(text_of(&result).contains("<svg"), "got: {result:?}");
+        assert!(
+            result.content.iter().all(|c| c.as_image().is_none()),
+            "svg must not be an image block"
+        );
+    }
+
+    #[test]
+    fn raster_image_inlined_as_image_block() {
+        let result = server("stdio")
+            .binary_result(BinaryResponse {
+                bytes: b"\x89PNG fake".to_vec(),
+                content_type: "image/png".to_string(),
+            })
+            .unwrap();
+        let image = result
+            .content
+            .iter()
+            .find_map(|c| c.as_image())
+            .expect("an image block");
+        assert_eq!(image.mime_type, "image/png");
+    }
+
+    #[test]
+    fn oversized_payload_on_stdio_written_to_temp_file() {
+        let result = server("stdio")
+            .binary_result(BinaryResponse {
+                bytes: vec![0u8; INLINE_IMAGE_LIMIT + 1],
+                content_type: "image/png".to_string(),
+            })
+            .unwrap();
+        assert!(!result.is_error.unwrap_or(false));
+        let text = text_of(&result);
+        let path = text
+            .split_whitespace()
+            .find(|w| w.contains("pocket-id-image-"))
+            .expect("a temp path in the message")
+            .to_string();
+        assert!(std::path::Path::new(&path).exists(), "file at {path}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn oversized_payload_on_http_is_an_error_without_temp_file() {
+        // A server-local path is useless to a remote HTTP client, and the
+        // kept file would leak on the server for every such call.
+        let result = server("http")
+            .binary_result(BinaryResponse {
+                bytes: vec![0u8; INLINE_IMAGE_LIMIT + 1],
+                content_type: "image/png".to_string(),
+            })
+            .unwrap();
+        assert!(result.is_error.unwrap_or(false));
+        let text = text_of(&result);
+        assert!(text.contains("HTTP transport"), "got: {text}");
+        assert!(!text.contains("pocket-id-image-"), "no path leaked: {text}");
     }
 }
