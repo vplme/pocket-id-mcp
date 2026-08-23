@@ -58,6 +58,8 @@ impl Authenticator {
             pocket_client,
             http: reqwest::Client::builder()
                 .user_agent(concat!("pocket-id-mcp/", env!("CARGO_PKG_VERSION")))
+                .connect_timeout(crate::client::CONNECT_TIMEOUT)
+                .timeout(crate::client::REQUEST_TIMEOUT)
                 .build()
                 .expect("static reqwest config"),
             discovery: RwLock::new(None),
