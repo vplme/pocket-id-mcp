@@ -428,13 +428,6 @@ pub struct ClientApiAccess {
     pub user_delegated_permission_ids: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClientApiAccessInput {
-    pub client_permission_ids: Vec<String>,
-    pub user_delegated_permission_ids: Vec<String>,
-}
-
 // ---------------------------------------------------------------------------
 // API keys
 // ---------------------------------------------------------------------------

@@ -225,8 +225,12 @@ pub fn build_router(
     state: Arc<HttpState>,
 ) -> Router {
     let hosts = allowed_hosts(&config);
+    // Built once and cloned per session: the tool/prompt routers and their
+    // massaged schemas are identical for every session, so rebuilding them
+    // per connection would be pure waste.
+    let server = PocketIdServer::new(config, client);
     let mcp_service = StreamableHttpService::new(
-        move || Ok(PocketIdServer::new(config.clone(), client.clone())),
+        move || Ok(server.clone()),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_allowed_hosts(hosts)

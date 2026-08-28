@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::{FileSource, NO_BODY};
 use crate::dto::*;
 use crate::server::{PocketIdServer, err_str};
-use crate::tools::{client_seg, seg};
+use crate::tools::{ApiResultExt, client_seg, seg};
 
 /// Application image slot. Maps to `/api/application-images/<slot>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
@@ -239,8 +239,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/application-configuration", &[], NO_BODY)
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(
@@ -257,8 +256,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(description = "List the current user's own audit log entries.")]
@@ -269,8 +267,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/audit-logs", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -283,8 +280,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/audit-logs/all", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "List client names present in the audit log (for building filters).")]
@@ -320,8 +316,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/api-keys", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get the SCIM service provider attached to an OIDC client.")]
@@ -340,8 +335,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get the Pocket ID version this instance is running.")]
@@ -445,8 +439,7 @@ impl PocketIdServer {
                 Some(&p.config),
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(description = "Trigger an LDAP directory sync now.")]
@@ -494,8 +487,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/api-keys", &[], Some(&body))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -513,8 +505,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -527,8 +518,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/scim/service-provider", &[], Some(&p))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -546,8 +536,7 @@ impl PocketIdServer {
                 Some(&p.provider),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(

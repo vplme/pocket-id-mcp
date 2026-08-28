@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::{FileSource, NO_BODY};
 use crate::dto::*;
 use crate::server::{PocketIdServer, err_str};
+use crate::tools::ApiResultExt;
 use crate::tools::identity::SearchListParams;
 use crate::tools::{client_seg, seg};
 
@@ -161,8 +162,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/oidc/clients", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get an OIDC client by ID, including its allowed user groups.")]
@@ -178,8 +178,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get an OIDC client's public metadata (name, type, logo flags).")]
@@ -195,8 +194,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -222,8 +220,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get an OIDC client's logo as an image for visual inspection.")]
@@ -257,8 +254,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "List the OIDC clients the current user has authorized.")]
@@ -274,8 +270,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "List the OIDC clients the current user can access.")]
@@ -291,8 +286,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -310,8 +304,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "List API definitions, with optional search, pagination, and sorting.")]
@@ -322,8 +315,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/apis", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get an API definition by ID, including its permissions.")]
@@ -339,8 +331,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 }
 
@@ -360,8 +351,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/oidc/clients", &[], Some(&p))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -379,8 +369,7 @@ impl PocketIdServer {
                 Some(&p.client),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -421,8 +410,7 @@ impl PocketIdServer {
                 body.as_ref(),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -443,8 +431,7 @@ impl PocketIdServer {
                 Some(&serde_json::json!({ "userGroupIds": p.user_group_ids })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -462,8 +449,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -522,8 +508,7 @@ impl PocketIdServer {
                 Some(&serde_json::json!({ "oidcClientIds": p.oidc_client_ids })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Revoke the current user's authorization (consent) for an OIDC client.")]
@@ -564,8 +549,7 @@ impl PocketIdServer {
                 })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -583,8 +567,7 @@ impl PocketIdServer {
                 Some(&serde_json::json!({ "name": p.name, "resource": p.resource })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Rename an API definition.")]
@@ -600,8 +583,7 @@ impl PocketIdServer {
                 Some(&serde_json::json!({ "name": p.name })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Delete an API definition and its permissions.")]
@@ -634,7 +616,6 @@ impl PocketIdServer {
                 Some(&serde_json::json!({ "permissions": p.permissions })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 }

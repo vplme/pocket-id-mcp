@@ -6,6 +6,32 @@ pub mod oidc;
 
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
+use crate::client::ApiError;
+use crate::dto::{Enveloped, enveloped};
+use crate::server::err_str;
+use rmcp::handler::server::wrapper::Json;
+
+/// The uniform result tails shared by nearly every tool body, so each tool
+/// ends in one call instead of repeating `.map(Json).map_err(err_str)`.
+pub(crate) trait ApiResultExt<T> {
+    /// JSON-returning tool tail: wrap the value for structured output and
+    /// stringify the error.
+    fn tool_json(self) -> Result<Json<T>, String>;
+    /// Same, for tools whose natural result needs the `{"result": ...}`
+    /// envelope (arrays and freeform values).
+    fn tool_enveloped(self) -> Result<Json<Enveloped<T>>, String>;
+}
+
+impl<T> ApiResultExt<T> for Result<T, ApiError> {
+    fn tool_json(self) -> Result<Json<T>, String> {
+        self.map(Json).map_err(err_str)
+    }
+
+    fn tool_enveloped(self) -> Result<Json<Enveloped<T>>, String> {
+        self.map(enveloped).map_err(err_str)
+    }
+}
+
 /// Safety tier of a tool. Tools are registered only when their tier is enabled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
