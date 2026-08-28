@@ -1,12 +1,19 @@
 //! OAuth 2.1 bearer-token validation: issuer discovery, JWKS caching,
 //! JWT validation with audience binding, and group-based admission.
 
-use jsonwebtoken::jwk::{Jwk, JwkSet};
+use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve, Jwk, JwkSet};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::config::OAuthConfig;
+
+/// Minimum age of the cached JWKS before an unknown-kid token may trigger a
+/// refetch. Without it, every request carrying an unknown kid causes an
+/// upstream fetch, letting unauthenticated callers use this server as
+/// request amplification against the IdP. Key rotation still converges
+/// within this window.
+const JWKS_REFRESH_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -29,13 +36,18 @@ pub struct DiscoveryDocument {
     pub authorization_endpoint: Option<String>,
 }
 
+struct CachedJwks {
+    keys: JwkSet,
+    fetched_at: std::time::Instant,
+}
+
 pub struct Authenticator {
     oauth: OAuthConfig,
     /// OAuth resource identifier (the public URL) tokens must be bound to.
     resource: String,
     http: reqwest::Client,
     discovery: RwLock<Option<DiscoveryDocument>>,
-    jwks: RwLock<Option<JwkSet>>,
+    jwks: RwLock<Option<CachedJwks>>,
 }
 
 impl Authenticator {
@@ -107,6 +119,16 @@ impl Authenticator {
 
     async fn fetch_jwks(&self) -> Result<JwkSet, AuthError> {
         let doc = self.discovery().await?;
+        // The write lock is held across the fetch on purpose: concurrent
+        // unknown-kid requests queue here instead of each firing their own
+        // upstream fetch, and the fresh-cache re-check below turns the
+        // queued ones into cache hits.
+        let mut slot = self.jwks.write().await;
+        if let Some(cache) = slot.as_ref() {
+            if cache.fetched_at.elapsed() < JWKS_REFRESH_COOLDOWN {
+                return Ok(cache.keys.clone());
+            }
+        }
         let jwks: JwkSet = self
             .http
             .get(&doc.jwks_uri)
@@ -116,7 +138,10 @@ impl Authenticator {
             .json()
             .await
             .map_err(|e| AuthError::Internal(format!("JWKS parse failed: {e}")))?;
-        *self.jwks.write().await = Some(jwks.clone());
+        *slot = Some(CachedJwks {
+            keys: jwks.clone(),
+            fetched_at: std::time::Instant::now(),
+        });
         Ok(jwks)
     }
 
@@ -131,12 +156,21 @@ impl Authenticator {
                 },
             }
         };
-        if let Some(set) = self.jwks.read().await.as_ref() {
-            if let Some(key) = pick(set) {
+        if let Some(cache) = self.jwks.read().await.as_ref() {
+            if let Some(key) = pick(&cache.keys) {
                 return Ok(key);
             }
+            // Unknown kid against a recently fetched set is an invalid
+            // token, not a rotation signal: refetching for every such token
+            // would let unauthenticated callers drive upstream traffic.
+            if cache.fetched_at.elapsed() < JWKS_REFRESH_COOLDOWN {
+                return Err(AuthError::Unauthorized(
+                    "token signed with unknown key".to_string(),
+                ));
+            }
         }
-        // Unknown kid: refresh once (handles issuer key rotation).
+        // Unknown kid and a cold or stale cache: refresh (handles issuer key
+        // rotation), rate-limited by the cooldown.
         let set = self.fetch_jwks().await?;
         pick(&set)
             .ok_or_else(|| AuthError::Unauthorized("token signed with unknown key".to_string()))
@@ -176,12 +210,9 @@ impl Authenticator {
         let jwk = self.key_for(header.kid.as_deref()).await?;
         let key = DecodingKey::from_jwk(&jwk)
             .map_err(|e| AuthError::Internal(format!("unusable JWK: {e}")))?;
-        let alg = jwk
-            .common
-            .key_algorithm
-            .and_then(|a| a.to_string().parse::<Algorithm>().ok())
-            .unwrap_or(header.alg);
-        let mut validation = Validation::new(alg);
+        let algorithms = allowed_algorithms(&jwk)?;
+        let mut validation = Validation::new(algorithms[0]);
+        validation.algorithms = algorithms;
         // The configured issuer is normalized without a trailing slash, but
         // some authorization servers' canonical iss ends in one (common for
         // path-based issuers like https://sts.example.com/tenant/). The two
@@ -230,5 +261,49 @@ impl Authenticator {
                 "token's \"{claim_name}\" claim does not include any allowed group"
             )))
         }
+    }
+}
+
+/// Verification algorithms admissible for a JWK, decided entirely server-side.
+///
+/// A JWK declaring `alg` pins exactly that algorithm. One without `alg` gets
+/// the signature algorithms its key type supports. The token header's `alg`
+/// is never consulted: it is attacker-controlled, and letting it pick the
+/// algorithm invites downgrade and key-confusion attacks (e.g. HS256 keyed
+/// with the public key material).
+fn allowed_algorithms(jwk: &Jwk) -> Result<Vec<Algorithm>, AuthError> {
+    if let Some(key_alg) = jwk.common.key_algorithm {
+        return match key_alg.to_string().parse::<Algorithm>() {
+            Ok(alg) => Ok(vec![alg]),
+            // e.g. an encryption algorithm such as RSA-OAEP: not a key this
+            // server may verify signatures against.
+            Err(_) => Err(AuthError::Unauthorized(format!(
+                "token signed with a key whose JWK declares the non-signature \
+                 algorithm {key_alg}"
+            ))),
+        };
+    }
+    match &jwk.algorithm {
+        AlgorithmParameters::RSA(_) => Ok(vec![
+            Algorithm::RS256,
+            Algorithm::RS384,
+            Algorithm::RS512,
+            Algorithm::PS256,
+            Algorithm::PS384,
+            Algorithm::PS512,
+        ]),
+        AlgorithmParameters::EllipticCurve(params) => match params.curve {
+            EllipticCurve::P256 => Ok(vec![Algorithm::ES256]),
+            EllipticCurve::P384 => Ok(vec![Algorithm::ES384]),
+            ref other => Err(AuthError::Unauthorized(format!(
+                "token signed with a key on the unsupported curve {other:?}"
+            ))),
+        },
+        AlgorithmParameters::OctetKeyPair(_) => Ok(vec![Algorithm::EdDSA]),
+        // A symmetric key in a public JWKS is an issuer misconfiguration;
+        // verifying against it would make the "secret" public.
+        AlgorithmParameters::OctetKey(_) => Err(AuthError::Internal(
+            "issuer JWKS contains a symmetric key; refusing to verify against it".to_string(),
+        )),
     }
 }

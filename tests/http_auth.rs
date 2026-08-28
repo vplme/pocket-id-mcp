@@ -209,6 +209,30 @@ async fn protected_resource_metadata_served() {
 }
 
 #[tokio::test]
+async fn metadata_not_served_for_foreign_paths() {
+    // RFC 9728 metadata exists at the root document and at the exact
+    // path-inserted document for this resource; a wildcard answering for
+    // arbitrary paths would claim resources this server does not host.
+    let issuer = MockServer::start().await;
+    mount_issuer(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), None);
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let (router, _state) = make_router(config, client);
+
+    for uri in [
+        "/.well-known/oauth-protected-resource/other",
+        "/.well-known/oauth-protected-resource/mcp/deeper",
+    ] {
+        let resp = router
+            .clone()
+            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "at {uri}");
+    }
+}
+
+#[tokio::test]
 async fn wrong_audience_rejected() {
     let issuer = MockServer::start().await;
     mount_issuer(&issuer).await;
@@ -349,6 +373,131 @@ async fn group_admission_enforced() {
     let admin = mint_token(&issuer.uri(), RESOURCE, Some(vec!["admins", "users"]), 3600);
     let claims = authenticator(&state).validate(&admin).await.unwrap();
     assert_eq!(claims["sub"], "user-1");
+}
+
+/// Mount discovery + a JWKS whose key omits `alg`, so the verification
+/// algorithm must be derived server-side from the key type.
+async fn mount_issuer_without_alg(server: &MockServer) {
+    let issuer = server.uri();
+    Mock::given(method("GET"))
+        .and(path("/.well-known/openid-configuration"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "issuer": issuer,
+            "jwks_uri": format!("{issuer}/jwks.json"),
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/jwks.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "keys": [{
+                "kty": "RSA",
+                "kid": KID,
+                "use": "sig",
+                "n": test_key().n_b64,
+                "e": "AQAB",
+            }]
+        })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn jwk_without_alg_derives_algorithms_from_key_type() {
+    // An RSA JWK omitting `alg` still verifies an RS256 token: the RSA
+    // signature algorithms are admissible for the key type.
+    let issuer = MockServer::start().await;
+    mount_issuer_without_alg(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), None);
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let state = make_state(&config, &client);
+
+    let token = mint_token(&issuer.uri(), RESOURCE, None, 3600);
+    let claims = authenticator(&state).validate(&token).await.unwrap();
+    assert_eq!(claims["sub"], "user-1");
+}
+
+#[tokio::test]
+async fn token_header_cannot_pick_the_verification_algorithm() {
+    // Classic key-confusion shape: the attacker crafts an HS256 token keyed
+    // with public material and hopes the server takes the algorithm from the
+    // (attacker-controlled) token header. With the JWK omitting `alg`, the
+    // admissible algorithms must come from the key type — HMAC is not among
+    // them for an RSA key.
+    let issuer = MockServer::start().await;
+    mount_issuer_without_alg(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), None);
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let state = make_state(&config, &client);
+
+    let claims = json!({
+        "iss": issuer.uri(),
+        "aud": RESOURCE,
+        "sub": "user-1",
+        "exp": (now() as i64 + 3600),
+        "iat": now(),
+    });
+    let mut header = Header::new(Algorithm::HS256);
+    header.kid = Some(KID.to_string());
+    let forged = encode(
+        &header,
+        &claims,
+        &EncodingKey::from_secret(test_key().n_b64.as_bytes()),
+    )
+    .unwrap();
+
+    let err = authenticator(&state).validate(&forged).await.unwrap_err();
+    assert!(matches!(err, AuthError::Unauthorized(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn unknown_kid_does_not_refetch_jwks_within_cooldown() {
+    // An unknown kid against a fresh JWKS is an invalid token, not a key
+    // rotation: refetching for every such token would let unauthenticated
+    // callers use this server as request amplification against the IdP.
+    let issuer = MockServer::start().await;
+    mount_issuer(&issuer).await;
+    let config = make_config("https://id.example.com", &issuer.uri(), None);
+    let client = Arc::new(PocketIdClient::new("https://id.example.com", "k".into()));
+    let state = make_state(&config, &client);
+    authenticator(&state).init().await.unwrap();
+
+    let jwks_fetches = || async {
+        issuer
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .filter(|r| r.url.path() == "/jwks.json")
+            .count()
+    };
+    assert_eq!(jwks_fetches().await, 1, "init fetches the JWKS once");
+
+    let claims = json!({
+        "iss": issuer.uri(),
+        "aud": RESOURCE,
+        "sub": "user-1",
+        "exp": (now() as i64 + 3600),
+        "iat": now(),
+    });
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = Some("not-a-known-key".to_string());
+    let token = encode(
+        &header,
+        &claims,
+        &EncodingKey::from_rsa_pem(test_key().pem.as_bytes()).unwrap(),
+    )
+    .unwrap();
+
+    for _ in 0..3 {
+        let err = authenticator(&state).validate(&token).await.unwrap_err();
+        assert!(matches!(err, AuthError::Unauthorized(_)), "got {err:?}");
+    }
+    assert_eq!(
+        jwks_fetches().await,
+        1,
+        "unknown-kid tokens must not drive JWKS refetches within the cooldown"
+    );
 }
 
 /// Gate serializing every test that installs a thread-local default
