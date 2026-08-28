@@ -41,7 +41,7 @@ impl ImageType {
     fn supports_delete(self) -> bool {
         matches!(
             self,
-            ImageType::Background | ImageType::DefaultProfilePicture
+            ImageType::Logo | ImageType::Background | ImageType::DefaultProfilePicture
         )
     }
 }
@@ -84,9 +84,11 @@ pub struct UpdateImageParams {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteImageParams {
-    /// Which application image to reset. Only background and
+    /// Which application image to reset. Only logo, background, and
     /// default_profile_picture can be reset upstream.
     pub image_type: ImageType,
+    /// Reset the light-mode logo variant when true (the API default when omitted); dark-mode when false. Only valid for image_type=logo.
+    pub light: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -356,6 +358,17 @@ impl PocketIdServer {
             .map_err(err_str)
     }
 
+    #[tool(
+        description = "Check whether Pocket ID warns that its SQLite database sits on a networked filesystem (unsupported and corruption-prone)."
+    )]
+    pub async fn get_sqlite_storage_warning(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
+        self.client
+            .json(Method::GET, "/api/storage/sqlite-warning", &[], NO_BODY)
+            .await
+            .map(|v| enveloped(AnyJson(v)))
+            .map_err(err_str)
+    }
+
     #[tool(description = "Check the instance's health endpoint.")]
     pub async fn health_check(&self) -> Result<String, String> {
         let bin = self.client.binary("/healthz", &[]).await.map_err(err_str)?;
@@ -400,7 +413,7 @@ impl PocketIdServer {
     }
 
     #[tool(
-        description = "Reset an application image to its default. Upstream supports this only for background and default_profile_picture."
+        description = "Reset an application image to its default. Upstream supports this only for logo (with an optional light flag), background, and default_profile_picture."
     )]
     pub async fn delete_application_image(
         &self,
@@ -408,15 +421,16 @@ impl PocketIdServer {
     ) -> Result<String, String> {
         if !p.image_type.supports_delete() {
             return Err(format!(
-                "{:?} cannot be reset via the API; only background and default_profile_picture support deletion. To change it, upload a replacement with update_application_image.",
+                "{:?} cannot be reset via the API; only logo, background, and default_profile_picture support deletion. To change it, upload a replacement with update_application_image.",
                 p.image_type
             ));
         }
+        let query = image_query(p.image_type, p.light)?;
         self.client
             .empty(
                 Method::DELETE,
                 &format!("/api/application-images/{}", p.image_type.path()),
-                &[],
+                &query,
                 NO_BODY,
             )
             .await

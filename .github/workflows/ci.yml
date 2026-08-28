@@ -50,7 +50,7 @@ jobs:
       # Pinned to the Pocket ID release the vendored spec describes (see
       # tests/live/common.rs); the weekly spec-drift workflow tracks upstream.
       - name: Pull Pocket ID image
-        run: docker pull ghcr.io/pocket-id/pocket-id:v2.13.0
+        run: docker pull ghcr.io/pocket-id/pocket-id:v2.14.0
 
       - name: Live suite against a real Pocket ID (cucumber features)
         run: POCKET_ID_LIVE=1 cargo test --test live

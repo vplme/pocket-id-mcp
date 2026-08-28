@@ -1,4 +1,86 @@
 definitions:
+  api.apiCimdAccessUpdateDto:
+    properties:
+      enabled:
+        type: boolean
+      permissionIds:
+        items:
+          type: string
+        type: array
+    required:
+    - permissionIds
+    type: object
+  api.apiClientAccessDto:
+    properties:
+      cimdGrantedAccess:
+        type: boolean
+      cimdGrantedPermissionIds:
+        items:
+          type: string
+        type: array
+      client:
+        $ref: '#/definitions/api.apiClientDto'
+      clientAccess:
+        type: boolean
+      clientPermissionIds:
+        items:
+          type: string
+        type: array
+      userDelegatedAccess:
+        type: boolean
+      userDelegatedPermissionIds:
+        items:
+          type: string
+        type: array
+    type: object
+  api.apiClientDto:
+    properties:
+      clientType:
+        type: string
+      hasDarkLogo:
+        type: boolean
+      hasLogo:
+        type: boolean
+      id:
+        type: string
+      isPublic:
+        type: boolean
+      name:
+        type: string
+    type: object
+  api.apiClientGrantDto:
+    properties:
+      clientAccess:
+        type: boolean
+      clientPermissionIds:
+        items:
+          type: string
+        type: array
+      userDelegatedAccess:
+        type: boolean
+      userDelegatedPermissionIds:
+        items:
+          type: string
+        type: array
+    type: object
+  api.apiClientGrantUpdateDto:
+    properties:
+      clientAccess:
+        type: boolean
+      clientPermissionIds:
+        items:
+          type: string
+        type: array
+      userDelegatedAccess:
+        type: boolean
+      userDelegatedPermissionIds:
+        items:
+          type: string
+        type: array
+    required:
+    - clientPermissionIds
+    - userDelegatedPermissionIds
+    type: object
   api.apiCreateDto:
     properties:
       name:
@@ -31,6 +113,8 @@ definitions:
     type: object
   api.apiPermissionResponseDto:
     properties:
+      allowedForCimdClients:
+        type: boolean
       description:
         type: string
       id:
@@ -49,6 +133,8 @@ definitions:
     type: object
   api.apiResponseDto:
     properties:
+      allowCimdClients:
+        type: boolean
       createdAt:
         type: string
       id:
@@ -71,30 +157,28 @@ definitions:
     required:
     - name
     type: object
-  api.clientApiAccessDto:
+  api.clientApiGrantDto:
     properties:
+      api:
+        $ref: '#/definitions/api.apiResponseDto'
+      cimdGrantedAccess:
+        type: boolean
+      cimdGrantedPermissionIds:
+        items:
+          type: string
+        type: array
+      clientAccess:
+        type: boolean
       clientPermissionIds:
         items:
           type: string
         type: array
+      userDelegatedAccess:
+        type: boolean
       userDelegatedPermissionIds:
         items:
           type: string
         type: array
-    type: object
-  api.clientApiAccessUpdateDto:
-    properties:
-      clientPermissionIds:
-        items:
-          type: string
-        type: array
-      userDelegatedPermissionIds:
-        items:
-          type: string
-        type: array
-    required:
-    - clientPermissionIds
-    - userDelegatedPermissionIds
     type: object
   apikey.apiKeyCreateDto:
     properties:
@@ -134,6 +218,122 @@ definitions:
       token:
         type: string
     type: object
+  apperror.Code:
+    enum:
+    - internal_error
+    - validation_failed
+    - invalid_request_body
+    - request_timeout
+    - not_found
+    - already_in_use
+    - forbidden
+    - invalid_token
+    - rate_limited
+    - file_too_large
+    - invalid_image
+    - invalid_webauthn_response
+    - webauthn_authentication_failed
+    - passkey_user_verification_required
+    - synced_passkey_not_allowed
+    - invalid_webauthn_session
+    - user_not_found
+    - user_disabled
+    - api_key_not_found
+    - invalid_api_key
+    - device_login_expired
+    - reauthentication_required
+    - invalid_email_verification_token
+    - setup_not_available
+    - setup_already_completed
+    - token_invalid_or_expired
+    - device_code_invalid
+    - oidc_missing_authorization
+    - oidc_invalid_callback_url
+    - file_type_not_supported
+    - not_signed_in
+    - missing_session_id
+    - reserved_claim
+    - duplicate_claim
+    - ldap_disabled
+    - ldap_user_update
+    - ldap_user_group_update
+    - oidc_access_denied
+    - oidc_client_id_not_matching
+    - ui_config_disabled
+    - one_time_access_disabled
+    - device_login_denied
+    - no_api_key_provided
+    - api_key_not_expired
+    - invalid_api_key_expiration
+    - api_key_auth_not_allowed
+    - oidc_device_code_expired
+    - oidc_invalid_device_code
+    - open_signup_disabled
+    - client_id_already_exists
+    - user_email_not_set
+    - image_not_found
+    - logo_download_failed
+    - logo_type_not_supported
+    - logo_too_large
+    - oidc_par_required
+    type: string
+    x-enum-varnames:
+    - CodeInternal
+    - CodeValidationFailed
+    - CodeInvalidRequestBody
+    - CodeRequestTimeout
+    - CodeNotFound
+    - CodeAlreadyInUse
+    - CodeForbidden
+    - CodeInvalidToken
+    - CodeRateLimited
+    - CodeFileTooLarge
+    - CodeInvalidImage
+    - CodeInvalidWebAuthnResponse
+    - CodeWebAuthnAuthenticationFailed
+    - CodePasskeyUserVerificationRequired
+    - CodeSyncedPasskeyNotAllowed
+    - CodeInvalidWebAuthnSession
+    - CodeUserNotFound
+    - CodeUserDisabled
+    - CodeAPIKeyNotFound
+    - CodeInvalidAPIKey
+    - CodeDeviceLoginExpired
+    - CodeReauthenticationRequired
+    - CodeEmailVerificationTokenInvalid
+    - CodeSetupNotAvailable
+    - CodeSetupAlreadyCompleted
+    - CodeTokenInvalidOrExpired
+    - CodeDeviceCodeInvalid
+    - CodeOidcMissingAuthorization
+    - CodeOidcInvalidCallbackURL
+    - CodeFileTypeNotSupported
+    - CodeNotSignedIn
+    - CodeMissingSessionID
+    - CodeReservedClaim
+    - CodeDuplicateClaim
+    - CodeLdapDisabled
+    - CodeLdapUserUpdate
+    - CodeLdapUserGroupUpdate
+    - CodeOidcAccessDenied
+    - CodeOidcClientIDNotMatching
+    - CodeUIConfigDisabled
+    - CodeOneTimeAccessDisabled
+    - CodeDeviceLoginDenied
+    - CodeNoAPIKeyProvided
+    - CodeAPIKeyNotExpired
+    - CodeInvalidAPIKeyExpiration
+    - CodeAPIKeyAuthNotAllowed
+    - CodeOidcDeviceCodeExpired
+    - CodeOidcInvalidDeviceCode
+    - CodeOpenSignupDisabled
+    - CodeClientIDAlreadyExists
+    - CodeUserEmailNotSet
+    - CodeImageNotFound
+    - CodeLogoDownloadFailed
+    - CodeLogoTypeNotSupported
+    - CodeLogoTooLarge
+    - CodeOidcPARRequired
   devicelogin.decisionDto:
     properties:
       code:
@@ -306,9 +506,6 @@ definitions:
       smtpUser:
         type: string
       webauthnAllowSyncedPasskeys:
-        enum:
-        - "true"
-        - "false"
         type: string
       webauthnAuthenticatorAttachment:
         enum:
@@ -334,8 +531,11 @@ definitions:
     - emailsVerified
     - homePageUrl
     - ldapEnabled
+    - ldapSkipCertVerify
+    - ldapSoftDeleteUsers
     - requireUserEmail
     - sessionDuration
+    - smtpSkipCertVerify
     - smtpTls
     - webauthnAllowSyncedPasskeys
     - webauthnAuthenticatorAttachment
@@ -412,6 +612,18 @@ definitions:
     required:
     - token
     type: object
+  dto.ErrorDto:
+    properties:
+      code:
+        $ref: '#/definitions/apperror.Code'
+      details:
+        additionalProperties: {}
+        type: object
+      error:
+        type: string
+      request_id:
+        type: string
+    type: object
   dto.OidcClientCreateDto:
     properties:
       accessTokenDurationMinutes:
@@ -468,6 +680,12 @@ definitions:
       federatedIdentities:
         items:
           $ref: '#/definitions/dto.OidcClientFederatedIdentityDto'
+        type: array
+      secrets:
+        description: 'Secrets is read-only: secrets are managed through the dedicated
+          client secret endpoints and any value sent by a client is ignored'
+        items:
+          $ref: '#/definitions/dto.OidcClientSecretDto'
         type: array
     type: object
   dto.OidcClientDto:
@@ -559,10 +777,48 @@ definitions:
         additionalProperties: {}
         type: object
     type: object
+  dto.OidcClientSecretCreateDto:
+    properties:
+      expiresAt:
+        description: ExpiresAt makes the secret unusable after the given time (if
+          nil, secrets don't expire)
+        type: string
+      secret:
+        description: Secret allows callers to supply their own value instead of having
+          Pocket ID generate one
+        minLength: 16
+        type: string
+    type: object
+  dto.OidcClientSecretCreatedDto:
+    properties:
+      createdAt:
+        type: string
+      expiresAt:
+        type: string
+      id:
+        type: string
+      isActive:
+        type: boolean
+      prefix:
+        description: Prefix holds the first few characters of the secret in clear
+          text, and is empty for secrets migrated from the single-secret column
+        type: string
+      secret:
+        type: string
+    type: object
   dto.OidcClientSecretDto:
     properties:
-      secret:
-        minLength: 16
+      createdAt:
+        type: string
+      expiresAt:
+        type: string
+      id:
+        type: string
+      isActive:
+        type: boolean
+      prefix:
+        description: Prefix holds the first few characters of the secret in clear
+          text, and is empty for secrets migrated from the single-secret column
         type: string
     type: object
   dto.OidcClientUpdateDto:
@@ -612,12 +868,14 @@ definitions:
     required:
     - name
     type: object
-  dto.OidcClientWithAllowedGroupsCountDto:
+  dto.OidcClientWithAllowedGroupsDto:
     properties:
       accessTokenDurationMinutes:
         type: integer
-      allowedUserGroupsCount:
-        type: integer
+      allowedUserGroups:
+        items:
+          $ref: '#/definitions/dto.UserGroupMinimalDto'
+        type: array
       callbackURLs:
         items:
           type: string
@@ -735,33 +993,6 @@ definitions:
       type:
         type: string
       value:
-        type: string
-    type: object
-  dto.ScimServiceProviderCreateDTO:
-    properties:
-      endpoint:
-        type: string
-      oidcClientId:
-        type: string
-      token:
-        type: string
-    required:
-    - endpoint
-    - oidcClientId
-    type: object
-  dto.ScimServiceProviderDTO:
-    properties:
-      createdAt:
-        type: string
-      endpoint:
-        type: string
-      id:
-        type: string
-      lastSyncedAt:
-        type: string
-      oidcClient:
-        $ref: '#/definitions/dto.OidcClientMetaDataDto'
-      token:
         type: string
     type: object
   dto.UserCreateDto:
@@ -937,6 +1168,24 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-api_apiClientAccessDto:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/api.apiClientAccessDto'
+        type: array
+      pagination:
+        $ref: '#/definitions/dto.Pagination'
+    type: object
+  github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-api_apiClientDto:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/api.apiClientDto'
+        type: array
+      pagination:
+        $ref: '#/definitions/dto.Pagination'
+    type: object
   github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-api_apiResponseDto:
     properties:
       data:
@@ -982,11 +1231,11 @@ definitions:
       pagination:
         $ref: '#/definitions/dto.Pagination'
     type: object
-  github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_OidcClientWithAllowedGroupsCountDto:
+  github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_OidcClientWithAllowedGroupsDto:
     properties:
       data:
         items:
-          $ref: '#/definitions/dto.OidcClientWithAllowedGroupsCountDto'
+          $ref: '#/definitions/dto.OidcClientWithAllowedGroupsDto'
         type: array
       pagination:
         $ref: '#/definitions/dto.Pagination'
@@ -1033,6 +1282,33 @@ definitions:
     - email
     type: object
   onetimeaccess.tokenCreateDto:
+    type: object
+  scimsync.ScimServiceProviderCreateDTO:
+    properties:
+      endpoint:
+        type: string
+      oidcClientId:
+        type: string
+      token:
+        type: string
+    required:
+    - endpoint
+    - oidcClientId
+    type: object
+  scimsync.ScimServiceProviderDTO:
+    properties:
+      createdAt:
+        type: string
+      endpoint:
+        type: string
+      id:
+        type: string
+      lastSyncedAt:
+        type: string
+      oidcClient:
+        $ref: '#/definitions/dto.OidcClientMetaDataDto'
+      token:
+        type: string
     type: object
   usersignup.signUpDto:
     properties:
@@ -1107,7 +1383,27 @@ paths:
           description: '{ \"keys\": []interface{} }'
           schema:
             type: object
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get JSON Web Key Set (JWKS)
+      tags:
+      - Well Known
+  /.well-known/oauth-authorization-server:
+    get:
+      description: Returns the RFC 8414 OAuth 2.0 authorization server metadata document
+        with endpoints and capabilities
+      responses:
+        "200":
+          description: OAuth 2.0 authorization server metadata
+          schema:
+            type: object
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
+      summary: Get OAuth 2.0 authorization server metadata
       tags:
       - Well Known
   /.well-known/openid-configuration:
@@ -1119,13 +1415,18 @@ paths:
           description: OpenID Connect configuration
           schema:
             type: object
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get OpenID Connect discovery configuration
       tags:
       - Well Known
-  /api/api-access/{clientId}:
+  /api/api-access/{clientId}/apis:
     get:
-      description: Get the API permissions an OIDC client is allowed to request, split
-        into user-delegated and client (machine-to-machine) access
+      description: Get every API the OIDC client may request tokens for, with its
+        access and permissions split into user-delegated and client (machine-to-machine)
+        access
       parameters:
       - description: OIDC Client ID
         in: path
@@ -1138,35 +1439,52 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.clientApiAccessDto'
-      summary: Get client API access
+            items:
+              $ref: '#/definitions/api.clientApiGrantDto'
+            type: array
+      summary: List APIs a client may access
       tags:
       - APIs
-    put:
-      consumes:
-      - application/json
-      description: Replace the API permissions an OIDC client is allowed to request,
-        split into user-delegated and client (machine-to-machine) access
+  /api/api-access/{clientId}/assignable-apis:
+    get:
+      description: Get a paginated list of APIs the OIDC client cannot already reach
       parameters:
       - description: OIDC Client ID
         in: path
         name: clientId
         required: true
         type: string
-      - description: Allowed permission IDs per subject type
-        in: body
-        name: access
-        required: true
-        schema:
-          $ref: '#/definitions/api.clientApiAccessUpdateDto'
+      - description: Search term to filter APIs by name or resource
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number for pagination
+        in: query
+        name: pagination[page]
+        type: integer
+      - default: 20
+        description: Number of items per page
+        in: query
+        name: pagination[limit]
+        type: integer
+      - description: Column to sort by
+        in: query
+        name: sort[column]
+        type: string
+      - default: '"asc"'
+        description: Sort direction (asc or desc)
+        in: query
+        name: sort[direction]
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.clientApiAccessDto'
-      summary: Update client API access
+            $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-api_apiResponseDto'
+      summary: List APIs a client can still be granted access to
       tags:
       - APIs
   /api/api-keys:
@@ -1366,6 +1684,174 @@ paths:
       summary: Update API
       tags:
       - APIs
+  /api/apis/{id}/assignable-clients:
+    get:
+      description: Get a paginated list of OIDC clients that have no grant on the
+        API yet
+      parameters:
+      - description: API ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Search term to filter clients by name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number for pagination
+        in: query
+        name: pagination[page]
+        type: integer
+      - default: 20
+        description: Number of items per page
+        in: query
+        name: pagination[limit]
+        type: integer
+      - description: Column to sort by
+        in: query
+        name: sort[column]
+        type: string
+      - default: '"asc"'
+        description: Sort direction (asc or desc)
+        in: query
+        name: sort[direction]
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-api_apiClientDto'
+      summary: List clients that can still be granted access to an API
+      tags:
+      - APIs
+  /api/apis/{id}/cimd-access:
+    put:
+      consumes:
+      - application/json
+      description: Replace which permissions of an API every client registered through
+        a Client ID Metadata Document may request
+      parameters:
+      - description: API ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Metadata document client access
+        in: body
+        name: access
+        required: true
+        schema:
+          $ref: '#/definitions/api.apiCimdAccessUpdateDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated API
+          schema:
+            $ref: '#/definitions/api.apiResponseDto'
+      summary: Update metadata document client access
+      tags:
+      - APIs
+  /api/apis/{id}/clients:
+    get:
+      description: Get a paginated list of OIDC clients that may reach the API, with
+        their permissions split into user-delegated and client (machine-to-machine)
+        access
+      parameters:
+      - description: API ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Search term to filter clients by name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number for pagination
+        in: query
+        name: pagination[page]
+        type: integer
+      - default: 20
+        description: Number of items per page
+        in: query
+        name: pagination[limit]
+        type: integer
+      - description: Column to sort by
+        in: query
+        name: sort[column]
+        type: string
+      - default: '"asc"'
+        description: Sort direction (asc or desc)
+        in: query
+        name: sort[direction]
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-api_apiClientAccessDto'
+      summary: List clients with access to an API
+      tags:
+      - APIs
+  /api/apis/{id}/clients/{clientId}:
+    delete:
+      description: Remove every permission of this API a single OIDC client was allowed
+        to request
+      parameters:
+      - description: API ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: OIDC Client ID
+        in: path
+        name: clientId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: Revoke a client's access to an API
+      tags:
+      - APIs
+    put:
+      consumes:
+      - application/json
+      description: Replace the permissions of this API a single OIDC client may request,
+        leaving its grants on other APIs untouched
+      parameters:
+      - description: API ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: OIDC Client ID
+        in: path
+        name: clientId
+        required: true
+        type: string
+      - description: Access and allowed permission IDs per subject type
+        in: body
+        name: access
+        required: true
+        schema:
+          $ref: '#/definitions/api.apiClientGrantUpdateDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.apiClientGrantDto'
+      summary: Update a client's access to an API
+      tags:
+      - APIs
   /api/apis/{id}/permissions:
     put:
       consumes:
@@ -1407,6 +1893,10 @@ paths:
             items:
               $ref: '#/definitions/dto.PublicAppConfigVariableDto'
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List public application configurations
       tags:
       - Application Configuration
@@ -1430,6 +1920,10 @@ paths:
             items:
               $ref: '#/definitions/dto.AppConfigVariableDto'
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update application configurations
       tags:
       - Application Configuration
@@ -1447,6 +1941,10 @@ paths:
             items:
               $ref: '#/definitions/dto.AppConfigVariableDto'
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List all application configurations
       tags:
       - Application Configuration
@@ -1465,6 +1963,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Send test email
       tags:
       - Application Configuration
@@ -1474,6 +1976,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete background image
       tags:
       - Application Images
@@ -1487,6 +1993,10 @@ paths:
           description: Background image
           schema:
             type: file
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get background image
       tags:
       - Application Images
@@ -1503,6 +2013,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update background image
       tags:
       - Application Images
@@ -1512,6 +2026,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete default profile picture image
       tags:
       - Application Images
@@ -1525,6 +2043,10 @@ paths:
           description: Default profile picture image
           schema:
             type: file
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get default profile picture image
       tags:
       - Application Images
@@ -1541,6 +2063,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update default profile picture image
       tags:
       - Application Images
@@ -1555,6 +2081,10 @@ paths:
           description: Email logo image
           schema:
             type: file
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get email logo image
       tags:
       - Application Images
@@ -1571,6 +2101,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update email logo
       tags:
       - Application Images
@@ -1584,6 +2118,10 @@ paths:
           description: Favicon image
           schema:
             type: file
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get favicon
       tags:
       - Application Images
@@ -1600,10 +2138,31 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update favicon
       tags:
       - Application Images
   /api/application-images/logo:
+    delete:
+      description: Delete the custom application logo and restore the default logo
+      parameters:
+      - description: Light mode logo (true) or dark mode logo (false)
+        in: query
+        name: light
+        type: boolean
+      responses:
+        "204":
+          description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
+      summary: Delete logo image
+      tags:
+      - Application Images
     get:
       description: Get the logo image for the application
       parameters:
@@ -1620,6 +2179,10 @@ paths:
           description: Logo image
           schema:
             type: file
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get logo image
       tags:
       - Application Images
@@ -1640,6 +2203,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update logo
       tags:
       - Application Images
@@ -1671,6 +2238,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_AuditLogDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List audit logs
       tags:
       - Audit Logs
@@ -1702,6 +2273,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_AuditLogDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List all audit logs
       tags:
       - Audit Logs
@@ -1715,6 +2290,10 @@ paths:
             items:
               type: string
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List client names
       tags:
       - Audit Logs
@@ -1728,6 +2307,10 @@ paths:
             additionalProperties:
               type: string
             type: object
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List users with IDs
       tags:
       - Audit Logs
@@ -1743,6 +2326,10 @@ paths:
             items:
               type: string
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get custom claim suggestions
       tags:
       - Custom Claims
@@ -1774,6 +2361,10 @@ paths:
             items:
               $ref: '#/definitions/dto.CustomClaimDto'
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update custom claims for a user group
       tags:
       - Custom Claims
@@ -1805,6 +2396,10 @@ paths:
             items:
               $ref: '#/definitions/dto.CustomClaimDto'
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update custom claims for a user
       tags:
       - Custom Claims
@@ -1917,7 +2512,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_OidcClientWithAllowedGroupsCountDto'
+            $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_OidcClientWithAllowedGroupsDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List OIDC clients
       tags:
       - OIDC
@@ -1939,6 +2538,10 @@ paths:
           description: Created client
           schema:
             $ref: '#/definitions/dto.OidcClientWithAllowedUserGroupsDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Create OIDC client
       tags:
       - OIDC
@@ -1954,6 +2557,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete OIDC client
       tags:
       - OIDC
@@ -1972,6 +2579,10 @@ paths:
           description: Client information
           schema:
             $ref: '#/definitions/dto.OidcClientWithAllowedUserGroupsDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get OIDC client
       tags:
       - OIDC
@@ -1998,6 +2609,10 @@ paths:
           description: Updated client
           schema:
             $ref: '#/definitions/dto.OidcClientWithAllowedUserGroupsDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update OIDC client
       tags:
       - OIDC
@@ -2025,6 +2640,10 @@ paths:
           description: Updated client
           schema:
             $ref: '#/definitions/dto.OidcClientDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update allowed user groups
       tags:
       - OIDC
@@ -2044,6 +2663,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete client logo
       tags:
       - OIDC
@@ -2068,6 +2691,10 @@ paths:
           description: Logo image
           schema:
             type: file
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get client logo
       tags:
       - OIDC
@@ -2093,6 +2720,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update client logo
       tags:
       - OIDC
@@ -2112,6 +2743,10 @@ paths:
           description: Client metadata
           schema:
             $ref: '#/definitions/dto.OidcClientMetaDataDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get client metadata
       tags:
       - OIDC
@@ -2142,6 +2777,10 @@ paths:
             payloads
           schema:
             $ref: '#/definitions/dto.OidcClientPreviewDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       security:
       - BearerAuth: []
       summary: Preview OIDC client data for user
@@ -2164,6 +2803,10 @@ paths:
           description: Refreshed client
           schema:
             $ref: '#/definitions/dto.OidcClientWithAllowedUserGroupsDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Refresh client metadata document
       tags:
       - OIDC
@@ -2182,15 +2825,44 @@ paths:
         "200":
           description: SCIM service provider configuration
           schema:
-            $ref: '#/definitions/dto.ScimServiceProviderDTO'
+            $ref: '#/definitions/scimsync.ScimServiceProviderDTO'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get SCIM service provider
       tags:
       - OIDC
-  /api/oidc/clients/{id}/secret:
+  /api/oidc/clients/{id}/secrets:
+    get:
+      description: List the secrets of an OIDC client, without disclosing their values
+      parameters:
+      - description: Client ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Client secrets
+          schema:
+            items:
+              $ref: '#/definitions/dto.OidcClientSecretDto'
+            type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
+      summary: List client secrets
+      tags:
+      - OIDC
     post:
       consumes:
       - application/json
-      description: Set or generate a new secret for an OIDC client
+      description: Add a new secret to an OIDC client, leaving the existing ones usable.
+        The value is only returned by this endpoint and cannot be retrieved later.
       parameters:
       - description: Client ID
         in: path
@@ -2201,15 +2873,44 @@ paths:
         in: body
         name: payload
         schema:
-          $ref: '#/definitions/dto.OidcClientSecretDto'
+          $ref: '#/definitions/dto.OidcClientSecretCreateDto'
       produces:
       - application/json
       responses:
-        "200":
-          description: '{ \"secret\": \"string\" }'
+        "201":
+          description: Created client secret
           schema:
-            type: object
+            $ref: '#/definitions/dto.OidcClientSecretCreatedDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Create client secret
+      tags:
+      - OIDC
+  /api/oidc/clients/{id}/secrets/{secretId}:
+    delete:
+      description: Delete a single secret of an OIDC client, making it immediately
+        unusable
+      parameters:
+      - description: Client ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Client secret ID
+        in: path
+        name: secretId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
+      summary: Delete client secret
       tags:
       - OIDC
   /api/oidc/introspect:
@@ -2276,11 +2977,19 @@ paths:
         in: query
         name: sort[direction]
         type: string
+      - description: Filter clients by whether a launch URL is configured
+        in: query
+        name: filters[hasLaunchURL]
+        type: boolean
       responses:
         "200":
           description: OK
           schema:
             $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_AuthorizedOidcClientDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List authorized clients for a user
       tags:
       - OIDC
@@ -2308,11 +3017,19 @@ paths:
         in: query
         name: sort[direction]
         type: string
+      - description: Filter clients by whether a launch URL is configured
+        in: query
+        name: filters[hasLaunchURL]
+        type: boolean
       responses:
         "200":
           description: OK
           schema:
             $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_AuthorizedOidcClientDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List authorized clients for current user
       tags:
       - OIDC
@@ -2329,6 +3046,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Revoke authorization for an OIDC client
       tags:
       - OIDC
@@ -2355,11 +3076,19 @@ paths:
         in: query
         name: sort[direction]
         type: string
+      - description: Filter clients by whether a launch URL is configured
+        in: query
+        name: filters[hasLaunchURL]
+        type: boolean
       responses:
         "200":
           description: OK
           schema:
             $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_AccessibleOidcClientDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List accessible OIDC clients for current user
       tags:
       - OIDC
@@ -2411,14 +3140,18 @@ paths:
         name: serviceProvider
         required: true
         schema:
-          $ref: '#/definitions/dto.ScimServiceProviderCreateDTO'
+          $ref: '#/definitions/scimsync.ScimServiceProviderCreateDTO'
       produces:
       - application/json
       responses:
         "201":
           description: Created SCIM service provider
           schema:
-            $ref: '#/definitions/dto.ScimServiceProviderDTO'
+            $ref: '#/definitions/scimsync.ScimServiceProviderDTO'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Create SCIM service provider
       tags:
       - SCIM
@@ -2434,6 +3167,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete SCIM service provider
       tags:
       - SCIM
@@ -2452,14 +3189,18 @@ paths:
         name: serviceProvider
         required: true
         schema:
-          $ref: '#/definitions/dto.ScimServiceProviderCreateDTO'
+          $ref: '#/definitions/scimsync.ScimServiceProviderCreateDTO'
       produces:
       - application/json
       responses:
         "200":
           description: Updated SCIM service provider
           schema:
-            $ref: '#/definitions/dto.ScimServiceProviderDTO'
+            $ref: '#/definitions/scimsync.ScimServiceProviderDTO'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update SCIM service provider
       tags:
       - SCIM
@@ -2475,6 +3216,10 @@ paths:
       responses:
         "200":
           description: OK
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Sync SCIM service provider
       tags:
       - SCIM
@@ -2589,6 +3334,26 @@ paths:
       summary: Sign up initial admin user
       tags:
       - Users
+  /api/storage/sqlite-warning:
+    get:
+      description: Reports whether Pocket ID found its SQLite database on a networked
+        filesystem, which is unsupported and can lead to database corruption
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: SQLite storage warning state
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
+      summary: Get whether the SQLite storage warning should be shown
+      tags:
+      - Storage
   /api/user-groups:
     get:
       description: Get a paginated list of user groups with optional search and sorting
@@ -2621,6 +3386,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_UserGroupMinimalDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List user groups
       tags:
       - User Groups
@@ -2642,6 +3411,10 @@ paths:
           description: Created user group
           schema:
             $ref: '#/definitions/dto.UserGroupDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Create user group
       tags:
       - User Groups
@@ -2661,6 +3434,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete user group
       tags:
       - User Groups
@@ -2682,6 +3459,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserGroupDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get user group by ID
       tags:
       - User Groups
@@ -2708,6 +3489,10 @@ paths:
           description: Updated user group
           schema:
             $ref: '#/definitions/dto.UserGroupDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update user group
       tags:
       - User Groups
@@ -2735,6 +3520,10 @@ paths:
           description: Updated user group
           schema:
             $ref: '#/definitions/dto.UserGroupDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update allowed OIDC clients
       tags:
       - OIDC
@@ -2762,6 +3551,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserGroupDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update users in a group
       tags:
       - User Groups
@@ -2797,6 +3590,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_pocket-id_pocket-id_backend_internal_dto.Paginated-dto_UserDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List users
       tags:
       - Users
@@ -2814,6 +3611,10 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/dto.UserDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Create user
       tags:
       - Users
@@ -2829,6 +3630,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete user
       tags:
       - Users
@@ -2845,6 +3650,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get user by ID
       tags:
       - Users
@@ -2867,6 +3676,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update user
       tags:
       - Users
@@ -2886,6 +3699,10 @@ paths:
             items:
               $ref: '#/definitions/dto.UserGroupDto'
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get user groups
       tags:
       - Users
@@ -2952,6 +3769,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Reset user profile picture
       tags:
       - Users
@@ -2975,6 +3796,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update user profile picture
       tags:
       - Users
@@ -2994,6 +3819,10 @@ paths:
           description: PNG image
           schema:
             type: file
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get user profile picture
       tags:
       - Users
@@ -3017,6 +3846,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update user groups
       tags:
       - Users
@@ -3036,6 +3869,10 @@ paths:
             items:
               $ref: '#/definitions/dto.WebauthnCredentialDto'
             type: array
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: List user passkeys
       tags:
       - Users
@@ -3056,6 +3893,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Delete user passkey
       tags:
       - Users
@@ -3067,6 +3908,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get current user
       tags:
       - Users
@@ -3084,6 +3929,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserDto'
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update current user
       tags:
       - Users
@@ -3096,6 +3945,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Reset current user's profile picture
       tags:
       - Users
@@ -3114,6 +3967,10 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Update current user's profile picture
       tags:
       - Users
@@ -3156,6 +4013,10 @@ paths:
             additionalProperties:
               type: string
             type: object
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get current deployed version of Pocket ID
       tags:
       - Version
@@ -3170,6 +4031,10 @@ paths:
             additionalProperties:
               type: string
             type: object
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Get latest available version of Pocket ID
       tags:
       - Version
@@ -3179,6 +4044,10 @@ paths:
       responses:
         "204":
           description: ""
+        default:
+          description: Error
+          schema:
+            $ref: '#/definitions/dto.ErrorDto'
       summary: Responds to healthchecks
       tags:
       - Health

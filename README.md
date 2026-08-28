@@ -6,7 +6,7 @@
 
 An MCP (Model Context Protocol) server for [Pocket ID](https://pocket-id.org) — the self-hosted, passkey-first OIDC identity provider.
 
-It exposes the complete Pocket ID REST API (103 operations) as **83 curated MCP tools** so AI assistants like Claude can manage your instance conversationally: users, groups, OIDC clients, custom claims, passkeys, branding images, audit logs, API keys, and SCIM provisioning — with safety tiers around destructive operations.
+It exposes the complete Pocket ID REST API (113 operations) as **91 curated MCP tools** so AI assistants like Claude can manage your instance conversationally: users, groups, OIDC clients, custom claims, passkeys, branding images, audit logs, API keys, and SCIM provisioning — with safety tiers around destructive operations.
 
 - **Single static binary** (Rust, [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), fast startup, tiny footprint
 - **Two transports**: stdio (default) and Streamable HTTP secured with OAuth 2.1
@@ -289,7 +289,9 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 | `create_oidc_client` | write |
 | `update_oidc_client` | write |
 | `delete_oidc_client` | write |
+| `list_oidc_client_secrets` | read |
 | `create_oidc_client_secret` | write |
+| `delete_oidc_client_secret` | write |
 | `update_oidc_client_allowed_groups` | write |
 | `get_oidc_client_metadata` | read |
 | `refresh_oidc_client_metadata` | write |
@@ -312,8 +314,13 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 
 | Tool | Tier |
 |---|---|
-| `get_client_api_access` | read |
+| `list_client_accessible_apis` | read |
+| `list_client_assignable_apis` | read |
+| `list_api_definition_clients` | read |
+| `list_api_definition_assignable_clients` | read |
 | `update_client_api_access` | write |
+| `revoke_client_api_access` | write |
+| `update_api_cimd_access` | write |
 | `list_api_definitions` | read |
 | `get_api_definition` | read |
 | `create_api_definition` | write |
@@ -373,13 +380,14 @@ Three workflow prompts encode common multi-step operations (tier-aware — write
 |---|---|
 | `get_current_version` | read |
 | `get_latest_version` | read |
+| `get_sqlite_storage_warning` | read |
 | `health_check` | read |
 
 </details>
 
 ## API coverage
 
-`spec/swagger.yaml` vendors the upstream API spec (currently Pocket ID v2.13.0). A test fails if any operation is neither mapped to a tool nor listed in `spec/exclusions.toml` with a reason (excluded: browser signup/setup flows, device-login endpoints, OIDC protocol endpoints, one-time token redemption). A weekly GitHub Actions job diffs upstream and opens a tracking issue on drift.
+`spec/swagger.yaml` vendors the upstream API spec (currently Pocket ID v2.14.0). A test fails if any operation is neither mapped to a tool nor listed in `spec/exclusions.toml` with a reason (excluded: browser signup/setup flows, device-login endpoints, OIDC protocol endpoints, one-time token redemption). A weekly GitHub Actions job diffs upstream and opens a tracking issue on drift.
 
 ## Development
 
@@ -410,7 +418,7 @@ Data-table cells are typed by the tool's advertised input schema, so a misspelle
 |---|---|
 | `POCKET_ID_LIVE=1` | Opt in (the binary exits early otherwise, so plain `cargo test` stays offline) |
 | `POCKET_ID_LIVE_URL` + `POCKET_ID_LIVE_API_KEY` | Test against an existing instance instead of Docker (admin API key; `@needs-bootstrap` scenarios are skipped) |
-| `POCKET_ID_LIVE_IMAGE` | Container image (default `ghcr.io/pocket-id/pocket-id:v2.13.0`, matching the vendored spec) |
+| `POCKET_ID_LIVE_IMAGE` | Container image (default `ghcr.io/pocket-id/pocket-id:v2.14.0`, matching the vendored spec) |
 | `POCKET_ID_LIVE_PORT` | Host port for the container (default `1431`) |
 
 The suite runs in CI on every pull request (`live` job). `scripts/e2e-oauth.py` additionally exercises the full OAuth 2.1 + PKCE flow in HTTP mode and stays a manual driver (needs `cloudflared`).

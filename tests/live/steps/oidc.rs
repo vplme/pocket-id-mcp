@@ -136,19 +136,20 @@ async fn set_secret(w: &mut LiveWorld, secret: String) {
         )
         .await;
     assert_eq!(set["secret"], secret, "chosen secret echoed back once");
+    w.first_secret_id = Some(str_of(&set, "id").to_string());
     w.secret = Some(secret);
 }
 
-#[when("I rotate its secret")]
-async fn rotate_secret(w: &mut LiveWorld) {
-    let rotated = w
+#[when("I add a generated secret")]
+async fn add_generated_secret(w: &mut LiveWorld) {
+    let added = w
         .mcp()
         .call_json(
             "create_oidc_client_secret",
             json!({"client_id": w.client_id()}),
         )
         .await;
-    let generated = str_of(&rotated, "secret").to_string();
+    let generated = str_of(&added, "secret").to_string();
     assert!(
         generated.len() >= 16,
         "generated secret too short: {generated:?}"
@@ -156,9 +157,37 @@ async fn rotate_secret(w: &mut LiveWorld) {
     assert_ne!(
         Some(&generated),
         w.secret.as_ref(),
-        "rotation produced the same secret"
+        "generation produced the same secret"
     );
     w.secret = Some(generated);
+}
+
+#[then(expr = "that client has {int} secrets listed")]
+async fn secrets_listed(w: &mut LiveWorld, count: usize) {
+    let listed = w
+        .mcp()
+        .call_json(
+            "list_oidc_client_secrets",
+            json!({"client_id": w.client_id()}),
+        )
+        .await;
+    let secrets = listed["result"].as_array().expect("secrets array");
+    assert_eq!(secrets.len(), count, "secrets: {secrets:?}");
+    // Metadata only: the listing must never disclose a secret value.
+    for s in secrets {
+        assert!(s.get("secret").is_none_or(|v| v.is_null()), "value leaked");
+    }
+}
+
+#[when("I delete the first secret")]
+async fn delete_first_secret(w: &mut LiveWorld) {
+    let secret_id = w.first_secret_id.clone().expect("a first secret was set");
+    w.mcp()
+        .call(
+            "delete_oidc_client_secret",
+            json!({"client_id": w.client_id(), "secret_id": secret_id}),
+        )
+        .await;
 }
 
 /// Pocket ID's introspection endpoint authenticates the client with HTTP
@@ -394,8 +423,10 @@ async fn grant_access(w: &mut LiveWorld, key: String) {
         .call(
             "update_client_api_access",
             json!({
+                "api_id": w.api_id(),
                 "client_id": w.client_id(),
                 "client_permission_ids": [],
+                "user_delegated_access": true,
                 "user_delegated_permission_ids": [perm_id],
             }),
         )
@@ -414,36 +445,54 @@ async fn api_has_permission(w: &mut LiveWorld, key: String) {
     );
 }
 
-#[then(expr = "Pocket ID's API access for that client delegates permission {string}")]
-async fn access_delegates(w: &mut LiveWorld, key: String) {
-    let access = w
-        .env
-        .get_ok(&format!("/api/api-access/{}", w.client_id()))
-        .await;
-    assert_eq!(
-        access["userDelegatedPermissionIds"],
-        json!([w.permission_ids[&key]])
-    );
-    assert_eq!(access["clientPermissionIds"], json!([]));
+/// The grant on the scenario's API from a `/api/api-access/{clientId}/apis`
+/// style listing (each entry embeds the API it grants).
+fn grant_for_api<'v>(grants: &'v serde_json::Value, api_id: &str) -> &'v serde_json::Value {
+    grants
+        .as_array()
+        .expect("grants array")
+        .iter()
+        .find(|g| g["api"]["id"] == api_id)
+        .unwrap_or_else(|| panic!("no grant for API {api_id} in {grants}"))
 }
 
-#[then("get_client_api_access for that client agrees with Pocket ID")]
+#[then(expr = "Pocket ID's API access for that client delegates permission {string}")]
+async fn access_delegates(w: &mut LiveWorld, key: String) {
+    let grants = w
+        .env
+        .get_ok(&format!("/api/api-access/{}/apis", w.client_id()))
+        .await;
+    let grant = grant_for_api(&grants, w.api_id());
+    assert_eq!(grant["userDelegatedAccess"], json!(true));
+    assert_eq!(
+        grant["userDelegatedPermissionIds"],
+        json!([w.permission_ids[&key]])
+    );
+    assert_eq!(grant["clientPermissionIds"], json!([]));
+}
+
+#[then("list_client_accessible_apis for that client agrees with Pocket ID")]
 async fn client_access_agrees(w: &mut LiveWorld) {
     let reported = w
         .mcp()
-        .call_json("get_client_api_access", json!({"client_id": w.client_id()}))
+        .call_json(
+            "list_client_accessible_apis",
+            json!({"client_id": w.client_id()}),
+        )
         .await;
-    let access = w
+    let grants = w
         .env
-        .get_ok(&format!("/api/api-access/{}", w.client_id()))
+        .get_ok(&format!("/api/api-access/{}/apis", w.client_id()))
         .await;
+    let reported_grant = grant_for_api(&reported["result"], w.api_id());
+    let grant = grant_for_api(&grants, w.api_id());
     assert_eq!(
-        reported["userDelegatedPermissionIds"],
-        access["userDelegatedPermissionIds"]
+        reported_grant["userDelegatedPermissionIds"],
+        grant["userDelegatedPermissionIds"]
     );
     assert_eq!(
-        reported["clientPermissionIds"],
-        access["clientPermissionIds"]
+        reported_grant["clientPermissionIds"],
+        grant["clientPermissionIds"]
     );
 }
 

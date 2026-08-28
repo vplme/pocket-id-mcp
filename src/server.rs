@@ -343,6 +343,7 @@ impl ServerHandler for PocketIdServer {
             params.token_id = tracing::field::Empty,
             params.key_id = tracing::field::Empty,
             params.credential_id = tracing::field::Empty,
+            params.secret_id = tracing::field::Empty,
             params.user_ids = tracing::field::Empty,
             params.user_group_ids = tracing::field::Empty,
             params.oidc_client_ids = tracing::field::Empty,

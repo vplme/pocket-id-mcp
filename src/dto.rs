@@ -351,9 +351,20 @@ pub struct OidcClientMetaData {
     pub requires_reauthentication: Option<bool>,
 }
 
+/// One secret of an OIDC client. Listing endpoints never disclose `secret`;
+/// the create endpoint returns it exactly once.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcClientSecret {
+    pub id: Option<String>,
+    /// First few characters of the secret in clear text; empty for secrets
+    /// migrated from the single-secret era.
+    pub prefix: Option<String>,
+    pub is_active: Option<bool>,
+    pub created_at: Option<String>,
+    pub expires_at: Option<String>,
+    /// The secret value — present only in the create response, never
+    /// retrievable again.
     pub secret: Option<String>,
 }
 
@@ -417,14 +428,58 @@ pub struct ApiDefinition {
     pub id: Option<String>,
     pub name: Option<String>,
     pub resource: Option<String>,
+    pub allow_cimd_clients: Option<bool>,
     pub created_at: Option<String>,
     pub permissions: Option<Vec<ApiPermission>>,
 }
 
+/// One OIDC client's grant on one API, split by subject type: what the
+/// client itself may request (machine-to-machine) and what users may
+/// delegate to it.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ClientApiAccess {
+pub struct ApiClientGrant {
+    pub client_access: Option<bool>,
     pub client_permission_ids: Option<Vec<String>>,
+    pub user_delegated_access: Option<bool>,
+    pub user_delegated_permission_ids: Option<Vec<String>>,
+}
+
+/// An API together with one client's grant on it (client-centric view).
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientApiGrant {
+    pub api: Option<ApiDefinition>,
+    pub cimd_granted_access: Option<bool>,
+    pub cimd_granted_permission_ids: Option<Vec<String>>,
+    pub client_access: Option<bool>,
+    pub client_permission_ids: Option<Vec<String>>,
+    pub user_delegated_access: Option<bool>,
+    pub user_delegated_permission_ids: Option<Vec<String>>,
+}
+
+/// Minimal OIDC client identity in API-access listings.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiClientSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub client_type: Option<String>,
+    pub is_public: Option<bool>,
+    pub has_logo: Option<bool>,
+    pub has_dark_logo: Option<bool>,
+}
+
+/// A client together with its grant on one API (API-centric view).
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiClientAccess {
+    pub client: Option<ApiClientSummary>,
+    pub cimd_granted_access: Option<bool>,
+    pub cimd_granted_permission_ids: Option<Vec<String>>,
+    pub client_access: Option<bool>,
+    pub client_permission_ids: Option<Vec<String>>,
+    pub user_delegated_access: Option<bool>,
     pub user_delegated_permission_ids: Option<Vec<String>>,
 }
 
