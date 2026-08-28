@@ -351,6 +351,35 @@ async fn group_admission_enforced() {
     assert_eq!(claims["sub"], "user-1");
 }
 
+/// Gate serializing every test that installs a thread-local default
+/// subscriber, so at most one capture subscriber exists at a time and
+/// interest-cache rebuilds never interleave. Acquire via [`log_capture_gate`].
+static SUBSCRIBER_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Serialize log capture AND defeat tracing's single-dispatcher fast path.
+///
+/// tracing caches per-callsite interest globally. While at most one
+/// dispatcher has ever been registered, a callsite first hit on any thread
+/// computes its interest from *that thread's* current default subscriber
+/// (`Rebuilder::JustOne` in tracing-core). Tests run in parallel, and the
+/// ones that don't capture logs drive the same router code with no
+/// subscriber installed — so they cache `Interest::never` for exactly the
+/// callsites the capture tests assert on, and the captured log comes back
+/// empty. Registering two dispatchers for the life of the test binary keeps
+/// `has_just_one` false, so interest is always computed from the dispatcher
+/// registry (which contains the capture subscriber while it exists) instead
+/// of from whichever thread happened to hit the callsite first.
+async fn log_capture_gate() -> tokio::sync::MutexGuard<'static, ()> {
+    use std::sync::OnceLock;
+    static PINNED: OnceLock<[tracing::Dispatch; 2]> = OnceLock::new();
+    PINNED.get_or_init(|| {
+        std::array::from_fn(
+            |_| tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default()),
+        )
+    });
+    SUBSCRIBER_GATE.lock().await
+}
+
 /// Log sink for the access-record assertions below.
 #[derive(Clone, Default)]
 struct CapturedLogs(Arc<std::sync::Mutex<Vec<u8>>>);
@@ -383,6 +412,7 @@ async fn forbidden_request_is_logged_with_status() {
     let (router, _state) = make_router(config, client);
     let outsider = mint_token(&issuer.uri(), RESOURCE, Some(vec!["users"]), 3600);
 
+    let _gate = log_capture_gate().await;
     let logs = CapturedLogs::default();
     // The production default filter: a record only visible under RUST_LOG
     // would not be an access log.
@@ -426,6 +456,7 @@ async fn admitted_oauth_caller_is_attributed_by_subject() {
     let (router, _state) = make_router(config, client);
     let admin = mint_token(&issuer.uri(), RESOURCE, Some(vec!["admins"]), 3600);
 
+    let _gate = log_capture_gate().await;
     let logs = CapturedLogs::default();
     let subscriber = tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new("pocket_id_mcp=info"))
