@@ -7,7 +7,7 @@ MCP tools for administering a Pocket ID instance: application images and configu
 ## Requirements
 
 ### Requirement: Application image tools with enum collapsing
-The server SHALL expose the 12 application-image operations as exactly three tools — `get_application_image`, `update_application_image`, `delete_application_image` — taking an `image_type` enum (`logo`, `favicon`, `background`, `email`, `default_profile_picture`) and an optional `light` boolean valid only for `logo`.
+The server SHALL expose the 13 application-image operations as exactly three tools — `get_application_image`, `update_application_image`, `delete_application_image` — taking an `image_type` enum (`logo`, `favicon`, `background`, `email`, `default_profile_picture`) and an optional `light` boolean valid only for `logo`.
 
 #### Scenario: Update the dark logo from a local file
 - **WHEN** the assistant calls `update_application_image` with `image_type=logo`, `light=false`, and a `file_path`
@@ -50,7 +50,7 @@ The server SHALL provide tools to create, update, delete, and sync SCIM service 
 - **THEN** the API starts a sync and the tool returns the API's response
 
 ### Requirement: Instance status tools
-The server SHALL provide `read`-tier tools for current version, latest available version, and health check.
+The server SHALL provide `read`-tier tools for current version, latest available version, the SQLite storage warning, and health check.
 
 #### Scenario: Update check
 - **WHEN** the assistant calls the version tools

@@ -106,7 +106,7 @@ async fn main() -> ExitCode {
         }
     }
 
-    match config.transport {
+    match config.transport() {
         Transport::Stdio => {
             let server = PocketIdServer::new(config.clone(), client);
             tracing::info!(

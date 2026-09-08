@@ -192,8 +192,10 @@ api_def = tool("set_api_definition_permissions", {
 })
 perm_ids = [p["id"] for p in api_def["permissions"]]
 tool("update_client_api_access", {
+    "api_id": api_def["id"],
     "client_id": CLIENT_ID,
     "client_permission_ids": [],
+    "user_delegated_access": True,
     "user_delegated_permission_ids": perm_ids,
 })
 check("resource registered as API definition + client granted access", True)
@@ -372,8 +374,10 @@ check("CIMD self-registration: authorize + token with URL client_id",
 # Grant the (now materialized) CIMD client access to the MCP resource, then
 # run the flow again with the resource indicator and call tools over HTTP.
 tool("update_client_api_access", {
+    "api_id": api_def["id"],
     "client_id": CIMD_CLIENT_ID,
     "client_permission_ids": [],
+    "user_delegated_access": True,
     "user_delegated_permission_ids": perm_ids,
 })
 code_c2, verifier_c2 = run_authorization(CIMD_CLIENT_ID, with_resource=True)

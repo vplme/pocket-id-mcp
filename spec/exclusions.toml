@@ -56,3 +56,8 @@ reason = "approving/denying device logins is a human security decision made in t
 method = "POST"
 path = "/api/oidc/introspect"
 reason = "RFC 7662 endpoint requiring OAuth client credentials (a client may only introspect its own tokens); never accepts the admin API key, so a tool here could only ever report valid tokens as inactive"
+
+[[exclusion]]
+method = "GET"
+path = "/.well-known/oauth-authorization-server"
+reason = "RFC 8414 OAuth protocol endpoint consumed by relying parties, not an admin operation"

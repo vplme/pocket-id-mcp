@@ -144,7 +144,7 @@ impl PocketIdServer {
                 bin.content_type,
             )]));
         }
-        if self.config.transport == Transport::Http {
+        if self.config.transport() == Transport::Http {
             return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "{} response ({} bytes) cannot be returned inline over the HTTP transport; \
                  fetch it from the Pocket ID API directly",
@@ -343,6 +343,7 @@ impl ServerHandler for PocketIdServer {
             params.token_id = tracing::field::Empty,
             params.key_id = tracing::field::Empty,
             params.credential_id = tracing::field::Empty,
+            params.secret_id = tracing::field::Empty,
             params.user_ids = tracing::field::Empty,
             params.user_group_ids = tracing::field::Empty,
             params.oidc_client_ids = tracing::field::Empty,

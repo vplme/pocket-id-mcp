@@ -31,14 +31,19 @@ Feature: OIDC client tools
       | skipConsent        | true                           |
       | pkceEnabled        | true                           |
 
-  Scenario: A minted secret authenticates the client until it is rotated
+  Scenario: Client secrets coexist and die independently
     Given a confidential OIDC client "{unique}"
     When I set its secret to "{unique}-chosen-secret"
     Then Pocket ID accepts "{unique}-chosen-secret" as that client's credential
     But Pocket ID rejects "definitely-not-the-secret" as that client's credential
-    When I rotate its secret
-    Then Pocket ID accepts the new secret as that client's credential
-    But Pocket ID rejects "{unique}-chosen-secret" as that client's credential
+    When I add a generated secret
+    Then that client has 2 secrets listed
+    And Pocket ID accepts the new secret as that client's credential
+    And Pocket ID accepts "{unique}-chosen-secret" as that client's credential
+    When I delete the first secret
+    Then Pocket ID rejects "{unique}-chosen-secret" as that client's credential
+    And Pocket ID accepts the new secret as that client's credential
+    And that client has 1 secrets listed
 
   Scenario: Previewing a client for a user reports that user's claims
     Given a confidential OIDC client "{unique}"
@@ -79,7 +84,7 @@ Feature: OIDC client tools
     And I grant that client user-delegated access to permission "read"
     Then Pocket ID's record of that API definition has permission "read"
     And Pocket ID's API access for that client delegates permission "read"
-    And get_client_api_access for that client agrees with Pocket ID
+    And list_client_accessible_apis for that client agrees with Pocket ID
     And "get_api_definition" for that API definition agrees with Pocket ID
     And "list_api_definitions" lists that API definition
 

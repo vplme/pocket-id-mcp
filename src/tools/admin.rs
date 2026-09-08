@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::{FileSource, NO_BODY};
 use crate::dto::*;
 use crate::server::{PocketIdServer, err_str};
-use crate::tools::{client_seg, seg};
+use crate::tools::{ApiResultExt, client_seg, seg};
 
 /// Application image slot. Maps to `/api/application-images/<slot>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
@@ -41,7 +41,7 @@ impl ImageType {
     fn supports_delete(self) -> bool {
         matches!(
             self,
-            ImageType::Background | ImageType::DefaultProfilePicture
+            ImageType::Logo | ImageType::Background | ImageType::DefaultProfilePicture
         )
     }
 }
@@ -84,9 +84,11 @@ pub struct UpdateImageParams {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteImageParams {
-    /// Which application image to reset. Only background and
+    /// Which application image to reset. Only logo, background, and
     /// default_profile_picture can be reset upstream.
     pub image_type: ImageType,
+    /// Reset the light-mode logo variant when true (the API default when omitted); dark-mode when false. Only valid for image_type=logo.
+    pub light: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -239,8 +241,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/application-configuration", &[], NO_BODY)
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(
@@ -257,8 +258,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(description = "List the current user's own audit log entries.")]
@@ -269,8 +269,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/audit-logs", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -283,8 +282,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/audit-logs/all", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "List client names present in the audit log (for building filters).")]
@@ -320,8 +318,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/api-keys", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get the SCIM service provider attached to an OIDC client.")]
@@ -340,8 +337,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get the Pocket ID version this instance is running.")]
@@ -357,6 +353,17 @@ impl PocketIdServer {
     pub async fn get_latest_version(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
         self.client
             .json(Method::GET, "/api/version/latest", &[], NO_BODY)
+            .await
+            .map(|v| enveloped(AnyJson(v)))
+            .map_err(err_str)
+    }
+
+    #[tool(
+        description = "Check whether Pocket ID warns that its SQLite database sits on a networked filesystem (unsupported and corruption-prone)."
+    )]
+    pub async fn get_sqlite_storage_warning(&self) -> Result<Json<Enveloped<AnyJson>>, String> {
+        self.client
+            .json(Method::GET, "/api/storage/sqlite-warning", &[], NO_BODY)
             .await
             .map(|v| enveloped(AnyJson(v)))
             .map_err(err_str)
@@ -406,7 +413,7 @@ impl PocketIdServer {
     }
 
     #[tool(
-        description = "Reset an application image to its default. Upstream supports this only for background and default_profile_picture."
+        description = "Reset an application image to its default. Upstream supports this only for logo (with an optional light flag), background, and default_profile_picture."
     )]
     pub async fn delete_application_image(
         &self,
@@ -414,15 +421,16 @@ impl PocketIdServer {
     ) -> Result<String, String> {
         if !p.image_type.supports_delete() {
             return Err(format!(
-                "{:?} cannot be reset via the API; only background and default_profile_picture support deletion. To change it, upload a replacement with update_application_image.",
+                "{:?} cannot be reset via the API; only logo, background, and default_profile_picture support deletion. To change it, upload a replacement with update_application_image.",
                 p.image_type
             ));
         }
+        let query = image_query(p.image_type, p.light)?;
         self.client
             .empty(
                 Method::DELETE,
                 &format!("/api/application-images/{}", p.image_type.path()),
-                &[],
+                &query,
                 NO_BODY,
             )
             .await
@@ -445,8 +453,7 @@ impl PocketIdServer {
                 Some(&p.config),
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(description = "Trigger an LDAP directory sync now.")]
@@ -494,8 +501,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/api-keys", &[], Some(&body))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -513,8 +519,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -527,8 +532,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/scim/service-provider", &[], Some(&p))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -546,8 +550,7 @@ impl PocketIdServer {
                 Some(&p.provider),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(

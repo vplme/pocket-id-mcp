@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::{FileSource, NO_BODY};
 use crate::dto::*;
 use crate::server::{PocketIdServer, err_str};
-use crate::tools::seg;
+use crate::tools::{ApiResultExt, seg};
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -176,8 +176,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/users", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get a user by ID.")]
@@ -193,8 +192,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get the user account associated with the configured API key.")]
@@ -202,8 +200,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/users/me", &[], NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "List the groups a user is a member of.")]
@@ -219,8 +216,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(
@@ -251,8 +247,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/user-groups", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get a user group by ID, including members and custom claims.")]
@@ -268,8 +263,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Get suggested custom-claim keys already in use on this instance.")]
@@ -296,8 +290,7 @@ impl PocketIdServer {
                 NO_BODY,
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(description = "List signup tokens with usage counts and expiry.")]
@@ -308,8 +301,7 @@ impl PocketIdServer {
         self.client
             .json(Method::GET, "/api/signup-tokens", &p.to_query(), NO_BODY)
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 }
 
@@ -327,8 +319,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/users", &[], Some(&p))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -346,8 +337,7 @@ impl PocketIdServer {
                 Some(&p.user),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Update the current user (the account behind the API key).")]
@@ -358,8 +348,7 @@ impl PocketIdServer {
         self.client
             .json(Method::PUT, "/api/users/me", &[], Some(&p))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -480,8 +469,7 @@ impl PocketIdServer {
                 Some(&serde_json::json!({ "userGroupIds": p.user_group_ids })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Create a user group.")]
@@ -492,8 +480,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/user-groups", &[], Some(&p))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Update a user group's name and friendly name.")]
@@ -509,8 +496,7 @@ impl PocketIdServer {
                 Some(&p.group),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Delete a user group. Members are not deleted.")]
@@ -545,8 +531,7 @@ impl PocketIdServer {
                 Some(&serde_json::json!({ "userIds": p.user_ids })),
             )
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(
@@ -564,8 +549,7 @@ impl PocketIdServer {
                 Some(&p.claims),
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 
     #[tool(
@@ -583,8 +567,7 @@ impl PocketIdServer {
                 Some(&p.claims),
             )
             .await
-            .map(enveloped)
-            .map_err(err_str)
+            .tool_enveloped()
     }
 }
 
@@ -651,8 +634,7 @@ impl PocketIdServer {
         self.client
             .json(Method::POST, "/api/signup-tokens", &[], Some(&body))
             .await
-            .map(Json)
-            .map_err(err_str)
+            .tool_json()
     }
 
     #[tool(description = "Delete (invalidate) a signup token.")]

@@ -118,6 +118,15 @@ impl std::fmt::Debug for PocketIdClient {
     }
 }
 
+/// Media type of a response, from its Content-Type header with any
+/// parameters (`; charset=...`) stripped.
+fn response_media_type(resp: &reqwest::Response) -> Option<String> {
+    resp.headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or(v).trim().to_string())
+}
+
 /// Extract a human-readable message from a Pocket ID error body without ever
 /// echoing credentials. Bodies are JSON like `{"error": "..."}`; fall back to
 /// truncated raw text.
@@ -264,18 +273,16 @@ impl PocketIdClient {
         let operation = format!("GET {path}");
         let req = self.request(Method::GET, path, query);
         let resp = self.execute(req, &operation).await?;
-        let content_type = resp
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.split(';').next().unwrap_or(v).trim().to_string())
-            .unwrap_or_else(|| "application/octet-stream".to_string());
+        let content_type =
+            response_media_type(&resp).unwrap_or_else(|| "application/octet-stream".to_string());
         let bytes = resp.bytes().await.map_err(|e| ApiError::Decode {
             operation,
             reason: e.to_string(),
         })?;
         Ok(BinaryResponse {
-            bytes: bytes.to_vec(),
+            // `into`, not `to_vec`: `From<Bytes> for Vec<u8>` reclaims the
+            // buffer without copying when it is uniquely owned.
+            bytes: bytes.into(),
             content_type,
         })
     }
@@ -380,11 +387,7 @@ impl PocketIdClient {
                         message: "fetching upload source failed".to_string(),
                     });
                 }
-                let content_type = resp
-                    .headers()
-                    .get(reqwest::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|v| v.split(';').next().unwrap_or(v).trim().to_string())
+                let content_type = response_media_type(&resp)
                     .filter(|v| !v.is_empty() && v != "application/octet-stream")
                     .unwrap_or_else(|| {
                         mime_guess::from_path(parsed.path())
@@ -403,7 +406,7 @@ impl PocketIdClient {
                     .await
                     .map_err(|e| ApiError::Input(format!("reading {url} failed: {e}")))?;
                 Ok(LoadedFile {
-                    bytes: bytes.to_vec(),
+                    bytes: bytes.into(),
                     file_name,
                     content_type,
                 })

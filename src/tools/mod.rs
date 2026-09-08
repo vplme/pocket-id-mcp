@@ -6,6 +6,32 @@ pub mod oidc;
 
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
+use crate::client::ApiError;
+use crate::dto::{Enveloped, enveloped};
+use crate::server::err_str;
+use rmcp::handler::server::wrapper::Json;
+
+/// The uniform result tails shared by nearly every tool body, so each tool
+/// ends in one call instead of repeating `.map(Json).map_err(err_str)`.
+pub(crate) trait ApiResultExt<T> {
+    /// JSON-returning tool tail: wrap the value for structured output and
+    /// stringify the error.
+    fn tool_json(self) -> Result<Json<T>, String>;
+    /// Same, for tools whose natural result needs the `{"result": ...}`
+    /// envelope (arrays and freeform values).
+    fn tool_enveloped(self) -> Result<Json<Enveloped<T>>, String>;
+}
+
+impl<T> ApiResultExt<T> for Result<T, ApiError> {
+    fn tool_json(self) -> Result<Json<T>, String> {
+        self.map(Json).map_err(err_str)
+    }
+
+    fn tool_enveloped(self) -> Result<Json<Enveloped<T>>, String> {
+        self.map(enveloped).map_err(err_str)
+    }
+}
+
 /// Safety tier of a tool. Tools are registered only when their tier is enabled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
@@ -110,7 +136,9 @@ pub const CATALOG: &[ToolSpec] = catalog! {
     "create_oidc_client" / Write => ["POST" "/api/oidc/clients"];
     "update_oidc_client" / Write => ["PUT" "/api/oidc/clients/{id}"];
     "delete_oidc_client" / Write => ["DELETE" "/api/oidc/clients/{id}"];
-    "create_oidc_client_secret" / Write => ["POST" "/api/oidc/clients/{id}/secret"];
+    "list_oidc_client_secrets" / Read => ["GET" "/api/oidc/clients/{id}/secrets"];
+    "create_oidc_client_secret" / Write => ["POST" "/api/oidc/clients/{id}/secrets"];
+    "delete_oidc_client_secret" / Write => ["DELETE" "/api/oidc/clients/{id}/secrets/{secretId}"];
     "update_oidc_client_allowed_groups" / Write => ["PUT" "/api/oidc/clients/{id}/allowed-user-groups"];
     "get_oidc_client_metadata" / Read => ["GET" "/api/oidc/clients/{id}/meta"];
     "refresh_oidc_client_metadata" / Write => ["POST" "/api/oidc/clients/{id}/refresh"];
@@ -125,8 +153,13 @@ pub const CATALOG: &[ToolSpec] = catalog! {
     "revoke_my_authorized_client" / Write => ["DELETE" "/api/oidc/users/me/authorized-clients/{clientId}"];
     "list_my_accessible_clients" / Read => ["GET" "/api/oidc/users/me/clients"];
     // --- oidc: API definitions and access --------------------------------
-    "get_client_api_access" / Read => ["GET" "/api/api-access/{clientId}"];
-    "update_client_api_access" / Write => ["PUT" "/api/api-access/{clientId}"];
+    "list_client_accessible_apis" / Read => ["GET" "/api/api-access/{clientId}/apis"];
+    "list_client_assignable_apis" / Read => ["GET" "/api/api-access/{clientId}/assignable-apis"];
+    "list_api_definition_clients" / Read => ["GET" "/api/apis/{id}/clients"];
+    "list_api_definition_assignable_clients" / Read => ["GET" "/api/apis/{id}/assignable-clients"];
+    "update_client_api_access" / Write => ["PUT" "/api/apis/{id}/clients/{clientId}"];
+    "revoke_client_api_access" / Write => ["DELETE" "/api/apis/{id}/clients/{clientId}"];
+    "update_api_cimd_access" / Write => ["PUT" "/api/apis/{id}/cimd-access"];
     "list_api_definitions" / Read => ["GET" "/api/apis"];
     "get_api_definition" / Read => ["GET" "/api/apis/{id}"];
     "create_api_definition" / Write => ["POST" "/api/apis"];
@@ -149,6 +182,7 @@ pub const CATALOG: &[ToolSpec] = catalog! {
         "PUT" "/api/application-images/default-profile-picture",
     ];
     "delete_application_image" / Write => [
+        "DELETE" "/api/application-images/logo",
         "DELETE" "/api/application-images/background",
         "DELETE" "/api/application-images/default-profile-picture",
     ];
@@ -177,6 +211,7 @@ pub const CATALOG: &[ToolSpec] = catalog! {
     // --- admin: status -----------------------------------------------------
     "get_current_version" / Read => ["GET" "/api/version/current"];
     "get_latest_version" / Read => ["GET" "/api/version/latest"];
+    "get_sqlite_storage_warning" / Read => ["GET" "/api/storage/sqlite-warning"];
     "health_check" / Read => ["GET" "/healthz"];
 };
 
@@ -210,6 +245,9 @@ const LOGGED_PARAMS: &[(&str, &str)] = &[
     ("token_id", "params.token_id"),
     ("key_id", "params.key_id"),
     ("credential_id", "params.credential_id"),
+    // `secret_id` identifies which client secret was acted on; `secret`
+    // (the value itself) stays unlisted.
+    ("secret_id", "params.secret_id"),
     ("user_ids", "params.user_ids"),
     ("user_group_ids", "params.user_group_ids"),
     ("oidc_client_ids", "params.oidc_client_ids"),

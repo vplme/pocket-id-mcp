@@ -178,11 +178,21 @@ pub struct Config {
     pub allow_dangerous: bool,
     /// Permit server-side url uploads to fetch from non-public addresses.
     pub allow_private_upload_urls: bool,
-    pub transport: Transport,
+    /// Present exactly when the transport is HTTP.
     pub http: Option<HttpConfig>,
 }
 
 impl Config {
+    /// The selected transport. Derived from `http` rather than stored, so
+    /// the two can never disagree.
+    pub fn transport(&self) -> Transport {
+        if self.http.is_some() {
+            Transport::Http
+        } else {
+            Transport::Stdio
+        }
+    }
+
     pub fn from_env() -> Result<Self, ConfigError> {
         let vars: HashMap<String, String> = std::env::vars().collect();
         Self::from_vars(&vars)
@@ -223,7 +233,6 @@ impl Config {
             read_only,
             allow_dangerous,
             allow_private_upload_urls,
-            transport,
             http,
         })
     }
@@ -374,7 +383,7 @@ mod tests {
         assert_eq!(cfg.api_key, "test-key");
         assert!(!cfg.read_only);
         assert!(!cfg.allow_dangerous);
-        assert_eq!(cfg.transport, Transport::Stdio);
+        assert_eq!(cfg.transport(), Transport::Stdio);
         assert!(cfg.http.is_none());
     }
 

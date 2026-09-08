@@ -82,6 +82,57 @@ async fn token_mode_admits_matching_token() {
 }
 
 #[tokio::test]
+async fn token_mode_accepts_case_insensitive_bearer_scheme() {
+    // RFC 7235 §2.1: the auth-scheme is case-insensitive, and some clients
+    // and proxies send `bearer` or `BEARER`.
+    for scheme in ["bearer", "BEARER", "BeArEr"] {
+        let router = make_router("token");
+        let req = Request::post("/mcp")
+            .header(header::HOST, "localhost")
+            .header(header::AUTHORIZATION, format!("{scheme} {SECRET}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .body(Body::from(
+                json!({
+                    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "0.0.0"}
+                    }
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "scheme {scheme:?}");
+    }
+}
+
+#[tokio::test]
+async fn token_mode_rejects_non_bearer_schemes() {
+    // Case-insensitivity applies to the scheme's spelling, not to which
+    // schemes are accepted.
+    let router = make_router("token");
+    let req = Request::post("/mcp")
+        .header(header::HOST, "localhost")
+        .header(
+            header::AUTHORIZATION,
+            format!("Basic {}", base64_credentials()),
+        )
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+fn base64_credentials() -> String {
+    // Not a real credential; any token68 value proves the point.
+    "dXNlcjpwYXNz".to_string()
+}
+
+#[tokio::test]
 async fn token_mode_rejects_wrong_and_missing_tokens() {
     for bearer in [Some("wrong-secret"), None] {
         let router = make_router("token");

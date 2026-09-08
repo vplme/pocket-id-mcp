@@ -79,16 +79,19 @@ async fn protected_resource_metadata(State(state): State<Arc<HttpState>>) -> Res
 }
 
 fn bearer_token(request: &Request) -> Option<&str> {
-    request
+    let value = request
         .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| {
-            v.strip_prefix("Bearer ")
-                .or_else(|| v.strip_prefix("bearer "))
-        })
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    // RFC 7235 §2.1: the auth-scheme is case-insensitive, and some clients
+    // and proxies do send `bearer` or `BEARER`.
+    let (scheme, token) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+    let token = token.trim();
+    (!token.is_empty()).then_some(token)
 }
 
 fn unauthorized(challenge: &str, reason: &str) -> Response {
@@ -222,8 +225,12 @@ pub fn build_router(
     state: Arc<HttpState>,
 ) -> Router {
     let hosts = allowed_hosts(&config);
+    // Built once and cloned per session: the tool/prompt routers and their
+    // massaged schemas are identical for every session, so rebuilding them
+    // per connection would be pure waste.
+    let server = PocketIdServer::new(config, client);
     let mcp_service = StreamableHttpService::new(
-        move || Ok(PocketIdServer::new(config.clone(), client.clone())),
+        move || Ok(server.clone()),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_allowed_hosts(hosts)
@@ -234,20 +241,33 @@ pub fn build_router(
     let mcp = Router::new().nest_service("/mcp", mcp_service);
 
     let routed = match state.as_ref() {
-        HttpState::OAuth(_) => Router::new()
-            .route(
+        HttpState::OAuth(oauth) => {
+            let mut metadata_routes = Router::new().route(
                 "/.well-known/oauth-protected-resource",
                 get(protected_resource_metadata),
-            )
-            .route(
-                "/.well-known/oauth-protected-resource/{*path}",
-                get(protected_resource_metadata),
-            )
-            .with_state(state.clone())
-            .merge(mcp.layer(axum::middleware::from_fn_with_state(
-                state,
-                oauth_middleware,
-            ))),
+            );
+            // Serve the RFC 9728 path-inserted document only at the exact
+            // path for this resource (e.g. `…/oauth-protected-resource/mcp`)
+            // — a wildcard would answer for resources this server does not
+            // host. Braces are escaped so a pathological public URL cannot
+            // be misread as axum route syntax.
+            if let Ok(url) = url::Url::parse(&oauth.metadata_url) {
+                let path = url.path().replace('{', "{{").replace('}', "}}");
+                if path != "/.well-known/oauth-protected-resource" {
+                    metadata_routes =
+                        metadata_routes.route(&path, get(protected_resource_metadata));
+                }
+            }
+            // route_layer, not layer, for the same reason as the token arm
+            // below: unknown paths fall through to a plain 404 rather than
+            // an auth challenge for a route that doesn't exist.
+            metadata_routes
+                .with_state(state.clone())
+                .merge(mcp.route_layer(axum::middleware::from_fn_with_state(
+                    state,
+                    oauth_middleware,
+                )))
+        }
         // route_layer, not layer: unknown paths must fall through to a plain
         // 404 rather than an auth challenge for a route that doesn't exist.
         HttpState::StaticToken { .. } => mcp.route_layer(axum::middleware::from_fn_with_state(

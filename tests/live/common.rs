@@ -28,7 +28,7 @@ use tokio::sync::OnceCell;
 
 pub const CONTAINER_NAME: &str = "pocket-id-mcp-live";
 /// Pinned to the Pocket ID release described by the vendored swagger spec.
-pub const DEFAULT_IMAGE: &str = "ghcr.io/pocket-id/pocket-id:v2.13.0";
+pub const DEFAULT_IMAGE: &str = "ghcr.io/pocket-id/pocket-id:v2.14.0";
 pub const DEFAULT_PORT: u16 = 1431;
 /// The real server binary built by cargo for this test run.
 pub const BIN: &str = env!("CARGO_BIN_EXE_pocket-id-mcp");

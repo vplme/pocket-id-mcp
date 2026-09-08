@@ -31,6 +31,8 @@ pub struct LiveWorld {
     pub api_id: Option<String>,
     pub api_name: Option<String>,
     pub secret: Option<String>,
+    /// ID of the first secret set on the scenario client, for deletion.
+    pub first_secret_id: Option<String>,
     pub permission_ids: HashMap<String, String>,
     pub signup_token_id: Option<String>,
     pub one_time_token: Option<String>,
@@ -64,6 +66,7 @@ impl LiveWorld {
             api_id: None,
             api_name: None,
             secret: None,
+            first_secret_id: None,
             permission_ids: HashMap::new(),
             signup_token_id: None,
             one_time_token: None,
